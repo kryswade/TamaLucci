@@ -1871,6 +1871,9 @@ function fxScript(dt) {
    Ostacoli: sdraio, valigie, bauli, gabbiani, striscioni. Bonus: salvagenti, gettoni "C", maritozzo. Traguardo: Genova.
    ============================================================================ */
 const RUN = { L: 3300, PX: 36 }, HW = alias({ baby: 5, child: 6, teen: 7, adult: 7 });
+/* bilanciamento: salto alto e lungo (doppio salto vero), scivolata lunga che resta giu' finche' c'e' un ostacolo alto sopra la testa,
+   salto 'bufferizzato' (B poco prima di atterrare = salta all'atterraggio), spazi tra gli ostacoli proporzionali alla velocita' */
+const RJ = { v1: 172, v2: 155, g: 380, slam: 300, slide: 0.8, hold: 0.22, buf: 0.14, gap: 16, mx: 4, my: 5, sf: 1.0, pe: 14 };
 let RS = null;
 function pmSprite(m) {
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
@@ -1904,7 +1907,7 @@ function drawCoinSpr(spr, cx, cy, t, seed) { const k = SPIN_W[Math.floor(t * 8 +
 function startRun() {
   buildRS(); fxClear(); PET.moving = false; PET.v = 0; PET.settle = false; bub = null; sel = -1;
   const st = S.stage, hS = getSprite(st, 'smile', 'down', false).h;
-  G = { k: 'run', t: 0, st, hS, hw: HW[st], ph: 'intro', pt: 0, cdi: -1, dist: 0, L: RUN.L, spd: 0, base: 62, y: 0, vy: 0, air: false, jumps: 0, crouch: 0, spin: 0, inv: 0, turbo: 0, hurt: 0, slam: false, sqx: 0, sqv: 0,
+  G = { k: 'run', t: 0, st, hS, hw: HW[st], ph: 'intro', pt: 0, cdi: -1, dist: 0, L: RUN.L, spd: 0, base: 62, y: 0, vy: 0, air: false, jumps: 0, crouch: 0, jbuf: 0, spin: 0, inv: 0, turbo: 0, hurt: 0, slam: false, sqx: 0, sqv: 0,
     hearts: 3, coins: 0, combo: 0, maxCombo: 0, score: 0, meter: 0, ready: false, objs: [], cur: 230, spawned: 0, pops: [], popN: 0, runph: 0, dustT: 0, lines: [], endT: 0, stars: 0, finished: false, hint: 4, lastMari: -999, hitN: 0, crashN: 0, tape: true };
   mode = 'game'; sfx('click');
 }
@@ -1915,12 +1918,13 @@ function rLow(g, x, type) { const s = RS[type]; g.objs.push({ kind: 'obs', t: ty
 function highY(g) { return FLOOR - 0.45 * g.hS - 2; }
 function rGull(g, x) { const yb = highY(g), s = RS.gull0; g.objs.push({ kind: 'obs', t: 'gull', x, y: yb - s.h + 2, sw: s.w, sh: s.h }); }
 function rBanner(g, x) { g.objs.push({ kind: 'obs', t: 'banner', x, y: 0, sw: 24, sh: Math.round(highY(g)) }); }
+const gapMin = (g, x) => { const sp = g.base + 32 * (x / g.L), air = 2 * RJ.v1 / RJ.g; return Math.max(74, Math.round(RJ.sf * air * sp + 14)); };
 function genChunk(g) {
   const x = g.cur, prog = x / g.L, big = g.hS >= 55;
   const pool = prog < 0.12 ? ['single', 'single', 'line'] : prog < 0.4 ? ['single', 'single', 'gull', 'line', 'double'] : ['single', 'double', 'gull', 'gull', 'double', big ? 'banner' : 'gull', 'line'];
   const p = pick(pool); let adv = 100;
-  if (p === 'single') { const t = pick(['chair', 'case', 'trunk']), w = rLow(g, x, t); rArc(g, x + w / 2, 5, 32, 9); if (Math.random() < 0.3) g.objs.push({ kind: 'coin', t: 'token', x: x + w / 2, y: FLOOR - 7 - 36, dx: 0, dy: 0 }); adv = w + rnd(74, 104); }
-  else if (p === 'double') { const w1 = rLow(g, x, pick(['chair', 'case', 'trunk'])), w2 = rLow(g, x + w1 + 34, pick(['chair', 'case', 'trunk'])); rArc(g, x + (w1 + 34 + w2) / 2, 8, 38, 9); if (g.meter < 70 && x - g.lastMari > 800 && Math.random() < 0.55) { g.objs.push({ kind: 'coin', t: 'mari', x: x + (w1 + 34 + w2) / 2, y: FLOOR - 7 - 44, dx: 0, dy: 0 }); g.lastMari = x; } adv = w1 + 34 + w2 + rnd(84, 112); }
+  if (p === 'single') { const t = pick(['chair', 'case', 'trunk']), w = rLow(g, x, t); rArc(g, x + w / 2, 5, 38, 9); if (Math.random() < 0.3) g.objs.push({ kind: 'coin', t: 'token', x: x + w / 2, y: FLOOR - 7 - 36, dx: 0, dy: 0 }); adv = w + gapMin(g, x) + rnd(0, 30); }
+  else if (p === 'double') { const w1 = rLow(g, x, pick(['chair', 'case', 'trunk'])), w2 = rLow(g, x + w1 + RJ.gap, pick(['chair', 'case', 'trunk'])); rArc(g, x + (w1 + RJ.gap + w2) / 2, 8, 46, 9); if (g.meter < 70 && x - g.lastMari > 800 && Math.random() < 0.55) { g.objs.push({ kind: 'coin', t: 'mari', x: x + (w1 + RJ.gap + w2) / 2, y: FLOOR - 7 - 52, dx: 0, dy: 0 }); g.lastMari = x; } adv = w1 + RJ.gap + w2 + gapMin(g, x) + rnd(RJ.pe, RJ.pe + 28); }
   else if (p === 'line') { rLine(g, x, 6, 9); adv = 54 + rnd(60, 80); }
   else if (p === 'gull') { rGull(g, x); if (prog > 0.35) rGull(g, x + 46); rLine(g, x - 6, 8, 8); adv = (prog > 0.35 ? 46 : 0) + 64 + rnd(64, 88); }
   else if (p === 'banner') { rBanner(g, x); rLine(g, x - 4, 5, 8); adv = 44 + rnd(70, 96); }
@@ -1962,9 +1966,10 @@ function runPress(b) {
   if (g.ph === 'result') { if (g.endT > 0.7) endRun(); return; }
   if (g.ph !== 'run') return; const feet = FLOOR - g.y;
   if (b === 'B') {
-    if (!g.air) { g.air = true; g.vy = 150; g.jumps = 1; g.crouch = 0; g.sqx = 0.26; sfx('jump'); fxDust(RUN.PX, FLOOR - 1, 1, 4); }
-    else if (g.jumps === 1) { g.vy = 132; g.jumps = 2; g.spin = 0.42; g.slam = false; sfx('jump2'); fxRing(RUN.PX, feet, '#ffffff', 2, 22, 0.35); fxStars(RUN.PX, feet - 6, 5, 28); }
-  } else if (b === 'A') { if (!g.air) { g.crouch = 0.6; sfx('slide'); g.sqx = -0.1; fxDust(RUN.PX - 4, FLOOR - 1, 1, 5); } else { g.vy = Math.min(g.vy, -240); g.slam = true; g.spin = 0; sfx('whoosh'); } }
+    if (!g.air) { g.air = true; g.vy = RJ.v1; g.jumps = 1; g.crouch = 0; g.sqx = 0.26; sfx('jump'); fxDust(RUN.PX, FLOOR - 1, 1, 4); }
+    else if (g.jumps === 1) { g.vy = RJ.v2; g.jumps = 2; g.spin = 0.42; g.slam = false; sfx('jump2'); fxRing(RUN.PX, feet, '#ffffff', 2, 22, 0.35); fxStars(RUN.PX, feet - 6, 5, 28); }
+    else g.jbuf = RJ.buf;
+  } else if (b === 'A') { if (!g.air) { g.crouch = RJ.slide; sfx('slide'); g.sqx = -0.1; fxDust(RUN.PX - 4, FLOOR - 1, 1, 5); } else { g.vy = Math.min(g.vy, -RJ.slam); g.slam = true; g.spin = 0; sfx('whoosh'); } }
   else if (b === 'C') { if (g.ready) rSiren(g); else { sfx('no'); rPop(g, 'RACCOGLI!', 0, 0, '#cfe2f5', 0.7); } }
 }
 function runLand(g) {
@@ -1999,7 +2004,9 @@ function runUpdate(dt) {
     if (g.endT > 3.6) { g.ph = 'result'; g.endT = 0; rRate(g); }
   } else if (g.ph === 'over') { g.endT += dt; g.spd += (0 - g.spd) * Math.min(1, dt * 2); g.dist += g.spd * dt * 0.5; if (g.endT > 2.5) { g.ph = 'result'; g.endT = 0; rRate(g); } }
   else if (g.ph === 'result') { g.endT += dt; if (g.endT > 7.5) endRun(); return; }
-  if (g.air) { g.vy -= 400 * dt; g.y += g.vy * dt; if (g.y <= 0) { if (g.ph === 'over') { g.y = 0; g.vy = 0; g.air = false; g.sqx = -0.3; sfx('land'); } else runLand(g); } }
+  if (g.air) { g.vy -= RJ.g * dt; g.y += g.vy * dt; if (g.y <= 0) { if (g.ph === 'over') { g.y = 0; g.vy = 0; g.air = false; g.sqx = -0.3; sfx('land'); } else { runLand(g); if (g.jbuf > 0 && g.ph === 'run') { g.jbuf = 0; runPress('B'); } } } }
+  if (g.jbuf > 0) g.jbuf -= dt;
+  if (g.crouch > 0 && !g.air && g.ph === 'run') for (const o of g.objs) { if (o.kind !== 'obs' || o.dead || (o.t !== 'gull' && o.t !== 'banner')) continue; const hx = RUN.PX + (o.x - g.dist); if (hx + o.sw > RUN.PX - g.hw && hx < RUN.PX + g.hw + 9) { g.crouch = Math.max(g.crouch, RJ.hold); break; } }
   if (g.crouch > 0) g.crouch -= dt; if (g.inv > 0) g.inv -= dt; if (g.hurt > 0) g.hurt -= dt; if (g.spin > 0) g.spin -= dt;
   if (g.turbo > 0) { g.turbo -= dt; if (g.turbo <= 0) { g.sqx = -0.12; rPop(g, 'FIATO!', 0, 0, '#cfe2f5', 0.6); } }
   if (g.ph === 'run' || g.ph === 'finish') {
@@ -2016,7 +2023,7 @@ function runUpdate(dt) {
       if (g.turbo > 0 && sx < W + 10 && sx > 0) { const ddx = RUN.PX - sx, ddy = (feet - hS * 0.4) - sy, dd = Math.hypot(ddx, ddy); if (dd < 52) { const k = Math.min(1, dt * 9); o.dx += ddx * k; o.dy += ddy * k; } }
       if (sx + cx > cl.x0 && sx - cx < cl.x1 && sy + cx > cl.y0 && sy - cx < cl.y1) rCollect(g, o, sx, sy);
     } else if (!o.dead) {
-      const ox0 = sx + 2, ox1 = sx + o.sw - 2, oy0 = o.y + 2, oy1 = o.y + o.sh - 1;
+      const hi = o.t === 'gull' || o.t === 'banner', ox0 = sx + RJ.mx, ox1 = sx + o.sw - RJ.mx, oy0 = o.y + (hi ? 2 : RJ.my), oy1 = o.y + o.sh - 2;
       if (hb.x1 > ox0 && hb.x0 < ox1 && hb.y1 > oy0 && hb.y0 < oy1) { if (g.turbo > 0) rCrash(g, o, sx); else if (g.inv <= 0) { rHurt(g); o.dead = true; fxBurst(sx + o.sw / 2, o.y + o.sh / 2, 8, { v0: 20, v1: 60, g: 200, cols: ['#ffffff', '#c4d8e4'], l0: 0.4, l1: 0.8 }); } }
     }
   }
@@ -2121,7 +2128,7 @@ function drawRun(t) {
   drawRunPet(g, t); fxDrawParts();
   /* ---- livello testo: sopra tutto ---- */
   drawRunHUD(g, t);
-  if (g.ph === 'run' && g.hint > 0) { const hx = 58, hy = 22; rect(hx - 1, hy - 1, 53, 27, K); rect(hx, hy, 51, 25, '#0f2a57'); text('B:SALTA', hx + 3, hy + 3, '#cfe2f5'); text('A:SCIVOLA', hx + 3, hy + 11, '#cfe2f5'); text('C:SIRENA', hx + 3, hy + 19, '#cfe2f5'); }
+  if (g.ph === 'run' && g.hint > 0) { const hx = 58, hy = 22; rect(hx - 1, hy - 1, 53, 27, K); rect(hx, hy, 51, 25, '#0f2a57'); text('B:SALTA X2', hx + 3, hy + 3, '#cfe2f5'); text('A:SCIVOLA', hx + 3, hy + 11, '#cfe2f5'); text('C:SIRENA', hx + 3, hy + 19, '#cfe2f5'); }
   if (g.turbo > 0) { const a = Math.floor(t * 20) & 1; rect(0, 17, W, 1, a ? '#7fdcff' : '#ffffff'); }
   if (g.ph === 'intro') { const p = g.pt, labs = ['3', '2', '1']; if (g.cdi >= 0 && g.cdi < 3) { const u = p - [0.35, 1.15, 1.95][g.cdi], sc = u < 0.1 ? 8 : u < 0.2 ? 6 : 5; textO(labs[g.cdi], 82, 56 - Math.round(sc * 2.5), ['#ffffff', '#f7c92b', '#ff7a7a'][g.cdi], 'c', sc, '#14246a'); } if (p < 0.35 || g.cdi < 0) plate('PRONTI?', 82, 40, '#ffffff', '#14246a', 2); }
   drawRunPops(g);
@@ -3070,9 +3077,11 @@ function drawScreen(t) {
   else {
     const cine = A && (A.type === 'bed' || A.type === 'eatP' || A.type === 'eatM');
     if (A && A.type === 'evolve') { drawEvolve(A, t); fxDrawParts(); drawEvolveUI(A); }
-      else if (A && A.type === 'visit') { drawVisit(A, t); }
+    else if (A && A.type === 'visit') { drawVisit(A, t); }
     else if (cine) {
-      if (A.t >= 0.4 && A.t < A.dur - 0.4) { drawCine(A, t); fxDrawParts(); drawBubble(); } else { drawScene(t); drawWorld(t, true); fxDrawParts(); }
+      if (A.t >= 0.4 && A.t < A.dur - 0.4) { drawCine(A, t); fxDrawParts(); drawBubble(); }
+      else if (A.type === 'bed' && A.t >= A.dur - 0.4) { drawSleepScene(null, t); fxDrawParts(); drawBubble(); }   // la tendina si riapre già sulla scena del sonno
+      else { drawScene(t); drawWorld(t, true); fxDrawParts(); }
       const f = coverFrac(A), bd = isBad(S.stage); if (A.type === 'bed') drawBlinds(f, bd ? DEN_BLINDS[S.stage][0] : null, bd ? DEN_BLINDS[S.stage][1] : null); else if (bd) drawChecker(f, DEN_CHECK[S.stage][0], DEN_CHECK[S.stage][1]); else if (A.type === 'eatP') drawChecker(f, '#d8383a', '#ffffff'); else drawChecker(f, '#f6a8c0', '#ffffff');
     } else if (mode === 'game' && G) drawRun(t);
     else if (S.sleeping && !(A && A.type === 'wake')) { drawSleepScene(null, t); fxDrawParts(); drawBubble(); }
@@ -3393,7 +3402,6 @@ VSC.ric = {
     else { p.aL = [0, 0, rant ? 26 * Math.sin(T * 12.5) + 8 : 10]; p.hd = [shout ? Math.round(Math.sin(T * 45)) : 0, shout ? -1 : 0, 6 * Math.sin(T * 8)]; p.lx = rant ? Math.round(Math.sin(T * 9)) : 0; p.dy = shout ? -Math.round(Math.abs(Math.sin(T * 12)) * 1.4) : 0; }
     if (tuck) { p.lL = [0, -2]; p.lR = [0, -2]; }
     const v = { show: T >= 2.6 && T < 14.25, x, feet: f, clip, pose: p, sq, sil: T < 3.25 ? '#0c0b10' : null, glow: T < 3.25 ? '#fff6c8' : null };
-    // pet
     const pt = petBase(A, T); let e = 'normal';
     if (T >= 1.9 && T < 6.0) e = 'smile'; else if (T >= 6.0 && T < 14.0) e = 'sad'; else if (T >= 14.0 && T < 14.8) e = 'refuse'; else if (T >= 14.8) e = 'smile';
     pt.expr = (pt.walk >= 0) ? 'normal' : e;
@@ -3499,7 +3507,6 @@ function visitTick(dt) {
   if (v && v.show) A.vpos = { x: v.x, top: v.feet - vpGet(A.who).h, feet: v.feet };
   const ln = vLine(A, T);
   if (ln) { if (A.vlast !== ln.l) { A.vlast = ln.l; A.vb = 0; } while (A.vb < ln.shown) { const ch = ln.l.txt[A.vb]; if (A.vb % 2 === 0) voice(A.who, ch); A.vb++; } } else A.vlast = null;
-  // particelle di testo
   for (const q of A.qs) { q.age += dt; q.vy += q.g * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.99; } A.qs = A.qs.filter(q => q.age < q.life);
   for (const w of A.ws) { w.age += dt; w.x += w.vx * dt; w.y += Math.sin(w.age * 7 + w.ph) * 8 * dt + w.vy * dt; } A.ws = A.ws.filter(w => { if (w.x + tw(w.txt) >= PET.x - 17) { fxBurst(w.x, w.y, 4, { v0: 10, v1: 34, shape: 'star', cols: ['#ffffff', '#f7c92b'], l0: 0.3, l1: 0.6 }); A.hit = T; return false; } return w.age < w.life; });
   if (A.who === 'ale' && ln && A.vpos && !ln.l.stop) { A.wt += dt; if (A.wt > 0.17) { A.wt = 0; A.ws.push({ txt: pick(['E POI', 'QUINDI', 'DICEVO', 'ANZI', 'COMUNQUE', 'TICKET', 'PERÒ', 'SCUSI', 'CIOÈ', 'ALLORA', 'DUNQUE']), x: A.vpos.x + 12, y: A.vpos.top + 14 + rnd(-4, 6), vx: rnd(28, 48), vy: rnd(-3, 3), ph: rnd(0, 6), age: 0, life: 3 }); } }
@@ -3531,7 +3538,6 @@ function drawVisit(A, t) {
   drawDoorLeaf(st.o, st.sh);
   if (v.show && !v.clip) { if (v.x < st.pet.x) { drawV(); drawPetV(st.pet, t); } else { drawPetV(st.pet, t); drawV(); } } else drawPetV(st.pet, t);
   PET.x = st.pet.x; PET.dir = st.pet.dir; bubAnchor = st.pet.x;
-  // simboli sopra i personaggi
   if (v.show && A.who === 'ric' && T >= 6.3 && T < 13.6) drawAnger(Math.round(v.x + 12), Math.round(v.feet - vpGet('ric').h + 6), T);
   if (A.who === 'dav') { const q = T >= 4.3 && T < 13.0; if (q && (Math.floor(T * 3) & 1)) plate('?', Math.round(st.pet.x), FLOOR - 70, '#ffffff', '#14246a'); }
   if (A.who === 'ale' && st.fear > 0.85 && T < 20.5) for (let i = 0; i < 3; i++) { const a = T * 6 + i * 2.09; star(Math.round(st.pet.x + Math.cos(a) * 11), Math.round(FLOOR - 62 + Math.sin(a) * 3), i & 1 ? '#f7c92b' : '#ffffff', 1); }

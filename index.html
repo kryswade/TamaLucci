@@ -925,7 +925,9 @@ function sfx(n) {
 /* ---------- RTC (orologio in tempo reale) ---------- */
 const gameDate = () => new Date(Date.now() + (DBG.on ? (S.clockOff || 0) : 0));
 const hourF = () => { const d = gameDate(); return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600; };
-const rate = () => RATES[S.rate || 0];
+const DEF_RATE = 3;                                         // velocita' predefinita: REALE
+const rIdx = () => (S.rate == null ? DEF_RATE : S.rate);
+const rate = () => RATES[rIdx()];
 function isNight(st, h) { const b = BED[st] || BED.adult; return b[0] <= 24 && (h >= b[0] || h < b[1]); }
 const pad2 = n => String(n).padStart(2, '0');
 const DAYS = ['DOM', 'LUN', 'MAR', 'MER', 'GIO', 'VEN', 'SAB'];
@@ -935,7 +937,7 @@ function fmtDur(s) { s = Math.max(0, Math.round(s)); if (s >= 3600) return Math.
 function fresh(keep) {
   return Object.assign({ stage: 'egg', stageAge: 0, totalAge: 0, hunger: 3, happy: 3, tired: 0, poops: 0, sick: false, sleeping: false, sleepKind: 'nap',
     hT: 0, aT: 0, poopT: rnd(CFG.poopMin, CFG.poopMax), sickT: 0, neglect: 0, extra: 0, wins: 0, assets: 0, workT: 0, callT: 0, wcPending: false,
-    cm: 0, cmStage: 0, disc: 40, tantrum: 0, nightT: 0, born: Date.now(), gen: 1, clockOff: 0, rate: 0, evoNews: '',
+    cm: 0, cmStage: 0, disc: 40, tantrum: 0, nightT: 0, born: Date.now(), gen: 1, clockOff: 0, rate: DEF_RATE, evoNews: '',
     dead: false, dying: false, deathCause: '', deathSeen: true, frac: 0, last: Date.now() }, keep || {});
 }
 function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.stage) return Object.assign(fresh(), s); } catch (e) { } return null; }
@@ -2230,7 +2232,7 @@ function drawClock(t) {
   analog(23, 36, 13, d);
   const blink = Math.floor(t * 2) % 2; text(pad2(d.getHours()), 62, 24, K, 'c', 2); if (blink) { rect(73, 26, 2, 2, K); rect(73, 31, 2, 2, K); } text(pad2(d.getMinutes()), 90, 24, K, 'c', 2);
   text(DAYS[d.getDay()] + ' ' + pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1), 76, 37, '#1f55b0', 'c'); text(P.night > 0.5 ? 'NOTTE' : P.night > 0.2 ? 'ALBA/TRAMONTO' : 'GIORNO', 76, 44, '#66727c', 'c');
-  const bd = BED[S.stage], opts = DBG.on ? ['ORE: +1', 'MINUTI: +10', 'VELOCITA: ' + RATE_NAMES[S.rate || 0], 'SINCRONIZZA'] : ['VELOCITA: ' + RATE_NAMES[S.rate || 0]];
+  const bd = BED[S.stage], opts = DBG.on ? ['ORE: +1', 'MINUTI: +10', 'VELOCITA: ' + RATE_NAMES[rIdx()], 'SINCRONIZZA'] : ['VELOCITA: ' + RATE_NAMES[rIdx()]];
   text('LETTO ' + Math.floor(bd[0]) + ':' + pad2(Math.round((bd[0] % 1) * 60)) + '  SVEGLIA ' + Math.floor(bd[1]) + ':' + pad2(Math.round((bd[1] % 1) * 60)), 56, 54, '#66727c', 'c');
   if (!DBG.on) text('ORA DI SISTEMA', 56, 62, '#2e7a3a', 'c');
   const y0 = DBG.on ? 62 : 72;
@@ -2238,9 +2240,9 @@ function drawClock(t) {
 }
 function clockPress(b) {
   if (b === 'C') { mode = 'main'; return; }
-  if (!DBG.on) { if (b === 'B') { S.rate = ((S.rate || 0) + 1) % RATES.length; sfx('ok'); save(); } return; }
+  if (!DBG.on) { if (b === 'B') { S.rate = (rIdx() + 1) % RATES.length; sfx('ok'); save(); } return; }
   if (b === 'A') { clockSel = (clockSel + 1) % 4; return; }
-  if (clockSel === 0) S.clockOff += 3600000; else if (clockSel === 1) S.clockOff += 600000; else if (clockSel === 2) S.rate = ((S.rate || 0) + 1) % RATES.length; else S.clockOff = 0;
+  if (clockSel === 0) S.clockOff += 3600000; else if (clockSel === 1) S.clockOff += 600000; else if (clockSel === 2) S.rate = (rIdx() + 1) % RATES.length; else S.clockOff = 0;
   PHC.k = -1; sfx('ok'); buildBg(); save();
 }
 /* ------------------------------ statistiche: profilo / salute / carattere / crescita / album ------------------------------ */
@@ -2268,7 +2270,7 @@ function drawStats(t) {
     text(tip, cx, 69, '#66727c', 'c'); text('SGRIDA SOLO I CAPRICCI', cx, 77, '#66727c', 'c');
   } else if (page === 3) {
     if (isAdultish(S.stage)) { text('RUOLO', cx, 26, '#66727c', 'c'); text(ROLE[S.stage][0], cx, 35, c, 'c'); text(ROLE[S.stage][1], cx, 44, c, 'c'); text(S.stage === 'adult' ? 'COSTA CROCIERE' : 'A BORDO...', cx, 55, '#1f55b0', 'c'); text((S.stage === 'adult' ? 'ASSET: ' : 'REFURTIVA: ') + S.assets, cx, 67, c, 'c'); }
-    else { text('PROSSIMA EVOLUZIONE', cx, 28, '#66727c', 'c'); const left = (CFG.dur[S.stage] - S.stageAge) / rate(); text('TRA ' + fmtDur(left), cx, 41, c, 'c'); text('VELOCITA ' + RATE_NAMES[S.rate || 0], cx, 54, '#1f55b0', 'c'); text('IL CARATTERE DECIDE', cx, 68, '#66727c', 'c'); }
+    else { text('PROSSIMA EVOLUZIONE', cx, 28, '#66727c', 'c'); const left = (CFG.dur[S.stage] - S.stageAge) / rate(); text('TRA ' + fmtDur(left), cx, 41, c, 'c'); text('VELOCITA ' + RATE_NAMES[rIdx()], cx, 54, '#1f55b0', 'c'); text('IL CARATTERE DECIDE', cx, 68, '#66727c', 'c'); }
   } else {
     FORM_LIST.forEach((f, i) => { const x = 3 + i * 15, y0 = 24; rect(x, y0, 14, 44, K); rect(x + 1, y0 + 1, 12, 42, isBad(f) ? '#e8c8c8' : '#cfe2f5'); const sp = f === 'baby' || f === 'child' ? getSprite(f, 'smile', 'down', false) : getSprite(f, 'smile', 'down', false);
       if (ALB[f]) ctx.drawImage(toCanvas(sp), 0, 0, sp.w, sp.h, x + 7 - Math.round(sp.w * 0.2), y0 + 40 - Math.round(sp.h * 0.4), Math.round(sp.w * 0.4), Math.round(sp.h * 0.4)); else { ctx.drawImage(silCanvas(sp, '#7a8791'), 0, 0, sp.w, sp.h, x + 7 - Math.round(sp.w * 0.2), y0 + 40 - Math.round(sp.h * 0.4), Math.round(sp.w * 0.4), Math.round(sp.h * 0.4)); text('?', x + 7, y0 + 4, K, 'c'); }
@@ -2452,7 +2454,7 @@ function dbgItems(p) {
     T('ORE +1', () => dbgClock(3600000)), T('ORE -1', () => dbgClock(-3600000)), T('MINUTI +10', () => dbgClock(600000)),
     T('PRESET: ' + (DBG.pre < 0 ? 'SCEGLI' : CLOCK_PRE[DBG.pre][0]), () => { DBG.pre = (DBG.pre + 1) % CLOCK_PRE.length; const c = CLOCK_PRE[DBG.pre]; dbgSetClock(c[1], c[2]); toast(c[0] + ' ' + c[1] + ':' + pad2(c[2])); }),
     T('ORA = SISTEMA', () => { S.clockOff = 0; PHC.k = -1; buildBg(); dbgOk('ORA DI SISTEMA'); }),
-    T('VELOCITA: ' + RATE_NAMES[S.rate || 0], () => { S.rate = ((S.rate || 0) + 1) % RATES.length; sfx('ok'); }),
+    T('VELOCITA: ' + RATE_NAMES[rIdx()], () => { S.rate = (rIdx() + 1) % RATES.length; sfx('ok'); }),
     T('SIMULA +5 MINUTI', () => dbgSim(300))
   ];
   if (p === 2) return [

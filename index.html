@@ -770,7 +770,7 @@ const BED = alias({ baby: [19, 6], child: [20, 7], teen: [22, 7.5], adult: [23, 
 const MENU = ['food', 'game', 'light', 'clean', 'med', 'disc', 'clock', 'stats'];
 const KEY = 'tamalucci.v9', ALBKEY = 'tamalucci.album';
 /* debug: attivo solo dopo 10 tocchi sul logo; con debug spento l'orologio segue l'ora di sistema */
-const DBG = { vis: 0, on: false, taps: 0, lastTap: 0, page: 0, row: 0, form: 'teen', pre: -1, ret: false };
+const DBG = { vis: 0, scn: -1, on: false, taps: 0, lastTap: 0, page: 0, row: 0, form: 'teen', pre: -1, ret: false };
 try { DBG.on = localStorage.getItem('tamalucci.dbg') === '1'; } catch (e) { }
 const BOT_Y = 146, ICX = i => 6 + (i % 4) * 26;      // barra icone sotto lo schermo + x delle 4 icone di ogni riga
 const FORM_LIST = ['baby', 'child', 'teen', 'adult', 'bully', 'thug', 'crim'];
@@ -938,7 +938,7 @@ function fresh(keep) {
   return Object.assign({ stage: 'egg', stageAge: 0, totalAge: 0, hunger: 3, happy: 3, tired: 0, poops: 0, sick: false, sleeping: false, sleepKind: 'nap',
     hT: 0, aT: 0, poopT: rnd(CFG.poopMin, CFG.poopMax), sickT: 0, neglect: 0, extra: 0, wins: 0, assets: 0, workT: 0, callT: 0, wcPending: false,
     cm: 0, cmStage: 0, disc: 40, tantrum: 0, nightT: 0, born: Date.now(), gen: 1, clockOff: 0, rate: DEF_RATE, evoNews: '',
-    dead: false, dying: false, deathCause: '', deathSeen: true, frac: 0, last: Date.now() }, keep || {});
+    dead: false, dying: false, vis: {}, deathCause: '', deathSeen: true, frac: 0, last: Date.now() }, keep || {});
 }
 function load() { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.stage) return Object.assign(fresh(), s); } catch (e) { } return null; }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(Object.assign({}, S, { last: Date.now() }))); } catch (e) { } }
@@ -2398,7 +2398,7 @@ function drawDead(t) {
 const GOOD_NEXT = { egg: 'baby', baby: 'child', child: 'teen', teen: 'adult', bully: 'adult' };
 const BAD_NEXT = { child: 'bully', teen: 'thug', bully: 'crim', adult: 'thug', thug: 'crim', crim: 'thug' };
 const CLOCK_PRE = [['ALBA', 6, 40], ['GIORNO', 12, 0], ['TRAMONTO', 18, 50], ['NOTTE', 23, 30]];
-const DBG_TABS = ['EVO', 'ORA', 'STA', 'CUR', 'VIT', 'SYS'];
+const DBG_TABS = ['EVO', 'ORA', 'STA', 'CUR', 'VIT', 'OSP', 'SYS'];
 const nmf = f => f ? NAMES[f] : '-';
 function dbgSave() { try { localStorage.setItem('tamalucci.dbg', DBG.on ? '1' : '0'); } catch (e) { } }
 function dbgToggle() {
@@ -2441,6 +2441,13 @@ function dbgKillNow() { G = null; anim = null; S.dying = false; S.dead = true; S
 const dbgOk = m => { toast(m); sfx('ok'); };
 function dbgItems(p) {
   const T = (l, f) => ({ l, f });
+    if (p === 5) return [
+      T('OSPITE: ' + VNAME[VKEYS[DBG.vis]], () => { DBG.vis = (DBG.vis + 1) % VKEYS.length; sfx('click'); }),
+      T('SCENA: ' + (DBG.scn < 0 ? 'A CASO' : (DBG.scn + 1) + ' ' + VSCN[VKEYS[DBG.vis]][DBG.scn].title.slice(0, 13)), () => { DBG.scn = DBG.scn >= 4 ? -1 : DBG.scn + 1; sfx('click'); }),
+      T('FAI ENTRARE ' + VNAME[VKEYS[DBG.vis]], () => { if (S.stage !== 'adult') dbgJump('adult'); dbgGo(); startVisit(VKEYS[DBG.vis], DBG.scn); }),
+      T('VISITE ' + VKEYS.map(k => k.toUpperCase() + ' ' + visRec(k).n).join(' '), () => { const r = visRec(VKEYS[DBG.vis]); toast(VNAME[VKEYS[DBG.vis]] + ' ' + r.seen.join('-')); sfx('ok'); }),
+      T('AZZERA RICORDI', () => { S.vis = {}; dbgOk('RICORDI AZZERATI'); })
+    ];
   if (p === 0) return [
     T('BUONA: ' + nmf(GOOD_NEXT[S.stage]), () => dbgEvo(GOOD_NEXT[S.stage])),
     T('CATTIVA: ' + nmf(BAD_NEXT[S.stage]), () => dbgEvo(BAD_NEXT[S.stage])),
@@ -2477,9 +2484,7 @@ function dbgItems(p) {
   if (p === 4) return [
     T('MUORI ANIMATO', dbgKill), T('MUORI SUBITO', dbgKillNow),
     T('RESUSCITA', () => { dbgRevive(); S.hunger = 4; S.happy = 4; S.sick = false; dbgOk('RESUSCITATO'); }),
-    T('NUOVO UOVO', () => { newEgg(); mode = 'debug'; dbgOk('NUOVO UOVO'); }),
-    T('OSPITE: ' + VNAME[VKEYS[DBG.vis]], () => { DBG.vis = (DBG.vis + 1) % VKEYS.length; sfx('click'); }),
-    T('FAI ENTRARE ' + VNAME[VKEYS[DBG.vis]], () => { if (S.stage !== 'adult') dbgJump('adult'); dbgGo(); startVisit(VKEYS[DBG.vis]); })
+    T('NUOVO UOVO', () => { newEgg(); mode = 'debug'; dbgOk('NUOVO UOVO'); })
   ];
   return [
     T('CANCELLA ALBUM', () => { for (const k in ALB) delete ALB[k]; try { localStorage.setItem(ALBKEY, '{}'); } catch (e) { } unlockForm(S.stage); dbgOk('ALBUM VUOTO'); }),
@@ -2495,7 +2500,7 @@ function dbgPress(b) {
 }
 function dbgRun() { if (anim) return; const it = dbgItems(DBG.page)[DBG.row]; if (it) { it.f(); save(); } }
 function dbgTap(x, y) {
-  if (y >= 22 && y < 32) { const i = Math.floor((x - 2) / 18); if (i >= 0 && i < DBG_TABS.length) { DBG.page = i; DBG.row = 0; sfx('click'); } return; }
+  if (y >= 22 && y < 32) { const i = Math.floor((x - 2) / 15); if (i >= 0 && i < DBG_TABS.length) { DBG.page = i; DBG.row = 0; sfx('click'); } return; }
   const i = Math.floor((y - 32) / 7), items = dbgItems(DBG.page);
   if (i >= 0 && i < items.length) { DBG.row = i; sfx('click'); dbgRun(); }
 }
@@ -2503,7 +2508,7 @@ function drawDebug(t) {
   const d = gameDate();
   rect(0, BAR, W, H - BAR, '#e9f2f6'); rect(0, BAR, W, 9, '#7a1a24'); rect(0, BAR + 9, W, 1, K);
   text((S.dead ? 'MORTO' : NAMES[S.stage]) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ' E' + S.cm + ' D' + Math.round(S.disc), 56, BAR + 2, '#ffffff', 'c');
-  DBG_TABS.forEach((n, i) => { const x = 2 + i * 18, on = i === DBG.page; rect(x, 22, 17, 9, K); rect(x + 1, 23, 15, 7, on ? '#f7c92b' : '#cfd8de'); text(n, x + 8.5, 25, K, 'c'); });
+  DBG_TABS.forEach((n, i) => { const x = 2 + i * 15, on = i === DBG.page; rect(x, 22, 14, 9, K); rect(x + 1, 23, 12, 7, on ? '#f7c92b' : '#cfd8de'); text(n, x + 7, 25, K, 'c'); });
   dbgItems(DBG.page).forEach((it, i) => { const y = 33 + i * 7, on = i === DBG.row; if (on) { rect(2, y - 1, 108, 7, '#f7c92b'); rect(2, y - 1, 108, 1, K); } text((on ? '>' : ' ') + it.l, 4, y, K); });
   text('A:AVANTI B:OK C:ESCI', 56, 84, '#66727c', 'c');
 }
@@ -3412,7 +3417,7 @@ VSC.ric = {
     return { o, sh, v, pet: pt, punch: A.sc.punch.find(q => T >= q.t0 && T < q.t1) ? { who: 'ric', face: { m: 2, eye: 0, brow: 'angry', red: 1 }, p: 0 } : null };
   },
   ev: [[0.05, A => dashFx(A)], [0.8, () => { vsfx('knockH'); fxShake(1.8); dustFromDoor(4); }], [1.05, () => { vsfx('knockH'); fxShake(1.8); dustFromDoor(4); }], [1.3, () => { vsfx('knockH'); fxShake(1.8); dustFromDoor(4); }], [1.55, () => { vsfx('knockH'); fxShake(2.2); dustFromDoor(6); }],
-    [1.95, () => petSay("Avanti, è aperto, aò!", 1.2)], [2.5, () => vsfx('door')], [2.88, () => { vsfx('bang'); fxShake(6); fxStop(0.08); flash = 0.55; fxRing(CX, 46, '#fff6c8', 2, 70, 0.5, { w: 2 }); }], [3.3, () => { sfx('sparkle'); fxStars(CX - 12, 42, 5, 22); }],
+    [2.5, () => vsfx('door')], [2.88, () => { vsfx('bang'); fxShake(6); fxStop(0.08); flash = 0.55; fxRing(CX, 46, '#fff6c8', 2, 70, 0.5, { w: 2 }); }], [3.3, () => { sfx('sparkle'); fxStars(CX - 12, 42, 5, 22); }],
     [4.85, () => petSay('Eh... così così, aò.', 1.1)], [6.0, () => { sfx('thunder'); fxShake(5); fxStop(0.1); flash = 0.6; fxRing(CX, 44, '#ff4060', 2, 60, 0.5); }], [6.3, () => sfx('whoosh')], [6.8, A => { landFx(54, true); sfx('slam'); }],
     [6.95, () => { vsfx('stamp'); fxShake(5); fxStop(0.07); }], [10.05, () => petSay("Calmo, calmo... mo' controllo er CMDB!", 1.45)], [12.45, () => { vsfx('stamp'); fxShake(6); fxStop(0.07); }],
     [13.55, () => sfx('whoosh')], [14.1, () => { vsfx('bang'); sfx('crash'); fxShake(8); fxStop(0.1); flash = 0.4; dustFromDoor(14); fxRing(CX, 46, '#ffffff', 2, 60, 0.5, { w: 2 }); }], [14.9, () => petSay('Fiuu... che stress!', 1.5)]]
@@ -3448,88 +3453,678 @@ VSC.dav = {
     return { o, sh, v, pet: pt, punch: A.sc.punch.find(q => T >= q.t0 && T < q.t1) ? { who: 'dav', face: { m: 2, eye: 'wide', brow: 'up', red: 0 }, p: 0 } : null };
   },
   ev: [[0.05, A => dashFx(A)], [0.8, () => { vsfx('knockL'); fxShake(0.8); }], [0.98, () => { vsfx('knockL'); fxShake(0.8); }], [1.16, () => { vsfx('knockL'); fxShake(1); }],
-    [1.45, () => petSay('Avanti, avanti, è aperto!', 1.2)], [2.1, () => vsfx('door')], [2.55, () => { sfx('click'); fxShake(1.5); flash = 0.2; }], [2.75, A => qBurst(A, 6)],
+    [2.1, () => vsfx('door')], [2.55, () => { sfx('click'); fxShake(1.5); flash = 0.2; }], [2.75, A => qBurst(A, 6)],
     [3.8, () => sfx('whoosh')], [4.3, () => landFx(57, false)], [4.2, A => { vsfx('stamp'); fxShake(4); fxStop(0.06); qBurst(A, 9); }], [5.85, A => { vsfx('question'); fxShake(3); qBurst(A, 10); }], [5.98, () => { vsfx('stamp'); fxShake(6); fxStop(0.07); }],
     [7.5, () => petSay("Davide... nun lo so, aò!", 1.35)], [9.0, A => qBurst(A, 7)], [11.0, A => { vsfx('stamp'); fxShake(5); fxStop(0.06); qBurst(A, 12); }],
     [13.0, () => petSay("Mo' scrivo 'na comunicazione, giuro!", 2.0)], [13.85, () => sfx('whoosh')], [14.45, () => vsfx('door')], [14.95, () => sfx('click')]]
 };
 /* ------------------------------ ALESSANDRO ------------------------------ */
+/* Monologo lunghissimo: ~50 battute di fila, senza mai respirare. Il pet passa per fasi: sorriso educato -> perplessita' -> sudore ->
+   si tappa le orecchie -> panico (urla, si tira i capelli, lacrime a fontana) -> follia (occhi a spirale, risata isterica, strobo rosso,
+   schermo che trema) -> crollo a terra quando Alessandro finalmente se ne va. Tutto in funzione di T (u = avanzamento del monologo 0..1). */
+const ALE_TXT = [
+  'BUONGIORNO! SCUSI TANTISSIMO IL DISTURBO!', 'SA, ERO PASSATO PERCHÉ HO APERTO UN TICKET,',
+  { t: "IL NUMERO 48213, CHE POI L'HO AGGIORNATO,", st: 'APERTO' }, "POI L'HO CHIUSO, POI L'HO RIAPERTO PERCHÉ",
+  { t: 'IN REALTÀ IL PROBLEMA NON ERA RISOLTO, MA', st: 'RIAPERTO!' }, 'ANCHE SÌ, DIPENDE, NEL SENSO CHE IL PC SI',
+  'ACCENDEVA, PERÒ SI SPEGNEVA, CIOÈ NO, SI', 'RIAVVIAVA, QUINDI FORSE NON SI SPEGNEVA.',
+  'ASPETTI, DEVO PRECISARE UNA COSA: ANZI DUE.', 'LA PRIMA È CHE HO CONTROLLATO IL CAVO,',
+  'LA SECONDA È CHE IL CAVO ERA COLLEGATO MA', "L'UTENTE DICEVA DI NO, PERÒ POI SÌ.",
+  'COMUNQUE LE STAVO DICENDO DEL TICKET,', { t: 'CHE È IN CARICO AL SECONDO LIVELLO, CHE PERÒ', st: 'IN CARICO' },
+  'LO HA RIASSEGNATO AL PRIMO, CHE SONO IO,', 'QUINDI PRATICAMENTE ME LO SONO ASSEGNATO DA SOLO.',
+  "NON È UNA LAMENTELA, EH, LO DICO PER COMPLETEZZA.", 'ALLORA, SULLA VPN: LA VPN SI CONNETTE,',
+  'MA NON SI CONNETTE BENE, NEL SENSO CHE SI', 'CONNETTE E POI CHIEDE LA PASSWORD, CHE ERA',
+  { t: 'GIUSTA, PERÒ SCADUTA, QUINDI NON GIUSTA.', st: 'SCADUTA' }, 'POI HO PROVATO CON IL RIAVVIO, CHE FUNZIONA',
+  'SEMPRE, TRANNE QUANDO NON FUNZIONA, E ALLORA', { t: 'HO APERTO UN ALTRO TICKET, IL 48214,', st: 'APERTO' },
+  'CHE È COLLEGATO AL 48213 MA NON È UN DUPLICATO,', 'PERCHÉ È UN FIGLIO, O UN CORRELATO, DEVO CONTROLLARE.',
+  { t: 'SCUSI, STO PARLANDO TROPPO? DICEVO...', gap: 0.35 }, "AH, LA STAMPANTE! PERCHÉ C'È ANCHE LA STAMPANTE.",
+  'NON STAMPA IN COLORE, MA STAMPA IN BIANCO E NERO,', 'CHE PER UNA STAMPANTE IN BIANCO E NERO VA BENE,',
+  'SOLO CHE È UNA STAMPANTE A COLORI. MISTERO.', 'HO CHIESTO A UN COLLEGA, CHE HA CHIESTO A UN ALTRO,',
+  'CHE HA DETTO DI APRIRE UN TICKET, QUINDI HO APERTO', { t: 'UN TICKET PER CAPIRE SE APRIRE UN TICKET.', st: 'ESCALATION' },
+  "POI C'È LA QUESTIONE DELLE LICENZE, CHE È LUNGA.", 'ALLORA, LE LICENZE SONO DI TRE TIPI. ANZI QUATTRO.',
+  'IL PRIMO TIPO, SE HA UN ATTIMO, PERCHÉ SPIEGO.', 'NON VADA VIA, SONO QUASI ALLA FINE. QUASI.',
+  'DICEVO, IL SECONDO SCADE IL TRENTUNO MA', 'ALCUNI MESI HANNO TRENTA GIORNI, QUINDI CHIEDO CONFERMA.',
+  { t: 'E POI IL PORTATILE, ASPETTI CHE LO SPIEGO MEGLIO.', st: 'DUPLICATO?' }, 'LO SCHERMO SI VEDE, MA SI VEDE A METÀ, A SINISTRA.',
+  "A DESTRA NON SI VEDE, PERÒ A DESTRA NON C'ERA NIENTE.", 'IN CONCLUSIONE, E QUESTA È LA PARTE IMPORTANTE,',
+  'NO, ASPETTI, PRIMA UNA COSA CHE MI ERA SFUGGITA...', { t: 'RIASSUMENDO: TICKET UNO, TICKET DUE, VPN, STAMPANTE,', st: 'RIAPERTO!' },
+  'LICENZE, PORTATILE E LO SCHERMO A METÀ. TUTTO CHIARO?', 'PERFETTO! QUINDI GRAZIE MILLE, BUONA GIORNATA,',
+  "E SE HA BISOGNO MI TROVA SEMPRE QUI, ANCHE SE", "NON CI SONO, PERCHÉ SONO IN GIRO A CHIUDERE TICKET.",
+  { t: 'ARRIVEDERCI! ANZI, UNA COSA SOLA E POI VADO...', gap: 0.3 }, 'NIENTE, NIENTE, ERA LA STESSA. BUONA GIORNATA!'
+];
+const ALE = (() => {
+  const cps = 44; let t = 3.4; const lines = [], stamps = [];
+  ALE_TXT.forEach(o => { const txt = typeof o === 'string' ? o : o.t, gap = (o.gap || 0), sp = txt.length / cps + 0.12 + gap; lines.push({ t, dur: sp, cps, txt }); if (o.st) stamps.push({ t0: t + 0.3, t1: t + 1.2, txt: o.st, sub: null, y: 58 }); t += sp; });
+  return { lines, stamps, t0: 3.4, end: t + 0.2 };
+})();
+const AE = ALE.end, AT = f => ALE.t0 + f * (AE - ALE.t0), AU = T => c01((T - ALE.t0) / (AE - ALE.t0));
+const ASTEPS = [0.1, 0.22, 0.34, 0.46, 0.58, 0.7];                       // l'Alessandro si avvicina a piccoli passi
+const APET = [[0.07, 'Aò... prego, dica pure!', 1.5], [0.17, 'Ho capito... forse...', 1.6], [0.27, 'Ma nun respira?!', 1.5], [0.36, 'Ho er mal de testa, aò...', 1.6], [0.44, 'Ve prego... basta...', 1.4],
+  [0.51, 'NUN CE LA FACCIO PIÙ!', 1.4, 1], [0.57, 'AAAAAAAH!!!', 1.3, 1], [0.63, 'Er ticket... er ticket...', 1.5], [0.69, 'ME STO A IMPAZZÀ!!!', 1.4, 1], [0.76, 'AHAHAH! TICKET!', 1.4, 1],
+  [0.83, "Mammà... voio l'uovo!", 1.6], [0.9, "AIUTOOOO! SO' SOLO!", 1.6, 1], [0.96, 'BASTAAAAA!!!', 1.3, 1]];
 VSC.ale = {
-  dur: 23.6, exitT: 19.3, openT: 2.5,
-  lines: [{ t: 3.4, dur: 1.5, cps: 40, txt: 'BUONGIORNO! SCUSI TANTISSIMO IL DISTURBO!' }, { t: 4.95, dur: 1.5, cps: 40, txt: 'ERO PASSATO PERCHÉ HO APERTO UN TICKET,' }, { t: 6.5, dur: 1.5, cps: 40, txt: "POI L'HO AGGIORNATO, POI L'HO CHIUSO," }, { t: 8.05, dur: 1.5, cps: 40, txt: "POI L'HO RIAPERTO PERCHÉ IN REALTÀ..." },
-    { t: 11.0, dur: 1.65, cps: 40, txt: 'ASPETTI, DEVO PRECISARE UNA COSA: ANZI DUE,' }, { t: 12.7, dur: 1.65, cps: 40, txt: 'LA PRIMA È CHE IL PC FUNZIONAVA, MA POI...' }, { t: 15.85, dur: 1.55, cps: 40, txt: 'SCUSI, STO PARLANDO TROPPO? DICEVO...' }, { t: 17.45, dur: 1.75, cps: 40, txt: 'COMUNQUE GRAZIE MILLE, BUONA GIORNATA!' }],
-  stamps: [], punch: [],
+  dur: AE + 7.4, exitT: AE, openT: 2.5,
+  lines: ALE.lines, stamps: ALE.stamps, punch: [],
   state(T, A) {
-    const o = vkf(T, [[0, 0], [2.5, 0], [3.5, 1], [20.5, 1], [21.3, 0]]); const sh = knockSh(T, [0.8, 1.4], 1);
-    const ln = vLine(A, T), talk = !!ln && ln.typing, fear = c01((T - 4.8) / 12.5);
-    let x = CX, f = SILL, clip = true, sq = 0, tuck = false, walking = false, ph = 0;
+    const o = vkf(T, [[0, 0], [2.5, 0], [3.5, 1], [AE + 1.5, 1], [AE + 2.3, 0]]); const sh = knockSh(T, [0.8, 1.4], 1);
+    const ln = vLine(A, T), talk = !!ln && ln.typing, u = AU(T), fear = c01((u - 0.05) / 0.5), mad = c01((u - 0.45) / 0.55);
+    let x = CX, f = SILL, clip = true, sq = 0, tuck = false, walking = false, ph = 0, xa = 62;
+    if (T >= 8.0) { let st = 0, mv = false; for (const s of ASTEPS) { const q = (T - AT(s)) / 0.5; st += 2 * easeIO(c01(q)); if (q > 0 && q < 1) mv = true; } xa = 62 + st * 0.6; if (mv && T < AE) { walking = true; ph = T * 2.2; } }
     if (T >= 4.0 && T < 4.6) { const h = hopSeg(T, 4.0, 4.6, CX, 58, SILL, FLOOR, 7); x = h.x; f = h.f; clip = false; sq = 0.12 * Math.sin(h.u * Math.PI); tuck = true; }
     else if (T >= 4.6 && T < 6.0) { x = 58; f = FLOOR; clip = false; const l = T - 4.6; sq = l < 0.5 ? -0.2 * Math.exp(-l * 7) * Math.cos(l * 22) : 0; }
-    else if (T >= 6.0 && T < 8.0) { x = lerp(58, 64, easeIO((T - 6.0) / 2.0)); f = FLOOR; clip = false; walking = true; ph = T * 1.8; }
-    else if (T >= 8.0 && T < 19.3) { x = 64; f = FLOOR; clip = false; }
-    else if (T >= 19.3 && T < 20.1) { x = lerp(64, CX, easeIO((T - 19.3) / 0.8)); f = FLOOR; clip = false; walking = true; ph = T * 2.2; }
-    else if (T >= 20.1 && T < 20.55) { const h = hopSeg(T, 20.1, 20.55, CX, CX, FLOOR, SILL, 7); x = h.x; f = h.f; clip = h.u > 0.97; tuck = true; }
-    else if (T >= 20.55) { x = CX; f = SILL; clip = true; }
+    else if (T >= 6.0 && T < 8.0) { x = lerp(58, 62, easeIO((T - 6.0) / 2.0)); f = FLOOR; clip = false; walking = true; ph = T * 1.8; }
+    else if (T >= 8.0 && T < AE) { x = xa; f = FLOOR; clip = false; }
+    else if (T >= AE && T < AE + 0.8) { x = lerp(xa, CX, easeIO((T - AE) / 0.8)); f = FLOOR; clip = false; walking = true; ph = T * 2.2; }
+    else if (T >= AE + 0.8 && T < AE + 1.25) { const h = hopSeg(T, AE + 0.8, AE + 1.25, CX, CX, FLOOR, SILL, 7); x = h.x; f = h.f; clip = h.u > 0.97; tuck = true; }
+    else if (T >= AE + 1.25) { x = CX; f = SILL; clip = true; }
     const p = vpz({ m: vmouth(T, talk), eye: vblink(T), brow: 0 });
     p.hd = [0, 0, (talk ? 5 : 2) * Math.sin(T * 4.2)]; p.dy = talk ? -Math.round(Math.abs(Math.sin(T * 7)) * 1) : 0;
-    const gz = talk ? 1 : 0.4;
-    p.aL = [0, 0, gz * (9 + 11 * Math.sin(T * 6.5))]; p.aR = [0, 0, -gz * (9 + 11 * Math.sin(T * 6.5 + 2.1))];
-    if (T >= 2.9 && T < 4.0 || (T >= 19.4 && T < 20.1)) { p.aR = [0, 0, -(62 + 18 * Math.sin(T * 11))]; p.hd = [0, 0, 4 * Math.sin(T * 3)]; }   // saluta con la mano
+    const gz = talk ? 1 : 0.4, am = 1 + 0.8 * u;
+    p.aL = [0, 0, gz * am * (9 + 11 * Math.sin(T * 6.5))]; p.aR = [0, 0, -gz * am * (9 + 11 * Math.sin(T * 6.5 + 2.1))];
+    if (T >= 2.9 && T < 4.0 || (T >= AE - 1.2 && T < AE + 0.8)) { p.aR = [0, 0, -(62 + 18 * Math.sin(T * 11))]; p.hd = [0, 0, 4 * Math.sin(T * 3)]; }
     if (walking) { const g = vgait(ph, 1); p.lL = g.lL; p.lR = g.lR; p.dy += g.dy; }
     if (tuck) { p.lL = [0, -2]; p.lR = [0, -2]; }
-    const v = { show: T >= 2.9 && T < 20.8, x, feet: f, clip, pose: p, sq };
-    const pt = petBase(A, T); let e = 'normal';
-    if (T >= 1.9 && T < 6.0) e = 'smile'; else if (T >= 6.0 && T < 9.6) e = 'normal'; else if (T >= 9.6 && T < 22.0) e = 'sad'; else e = 'smile';
-    pt.expr = (pt.walk >= 0) ? 'normal' : e;
-    if (T >= 4.8 && T < 20.5) { pt.x = 86 + Math.round(fear * 8); pt.dx = Math.round(Math.sin(T * 31) * (0.4 + fear * 1.3)); pt.k = -0.03 - 0.1 * fear; }
-    if (T >= 20.5 && T < 21.5) pt.x = lerp(86 + 8, 86, easeOut((T - 20.5) / 1.0));
-    if (T >= 21.5 && T < 22.6) pt.k = 0.1 * Math.sin((T - 21.5) / 1.1 * Math.PI) - 0.0;
-    return { o, sh, v, pet: pt, punch: null, fear };
+    const v = { show: T >= 2.9 && T < AE + 1.6, x, feet: f, clip, pose: p, sq };
+    // ---------------- il pet ----------------
+    const pt = petBase(A, T), ov = {}; let e = 'normal', px = 86, dx = 0, dy = 0, k = 0;
+    const jolt = vpulse(T, A.hit != null ? A.hit : -9, 0.18);
+    if (T < AT(0.08)) e = 'smile';
+    else if (T < AE) {
+      px = 86 + 11 * easeIO(c01((u - 0.22) / 0.25));
+      dx = Math.round(Math.sin(T * 31) * (0.3 + 1.6 * fear)); k = -0.03 - 0.08 * fear;
+      if (u < 0.22) e = 'normal';
+      else if (u < 0.44) e = 'sad';
+      else if (u < 0.6) { e = 'refuse'; ov.ears = true; dx = Math.round(Math.sin(T * 38) * 2.2); k = -0.1 + 0.05 * Math.sin(T * 9); }
+      else if (u < 0.77) { e = (Math.floor(T * 4.5) & 1) ? 'eat' : 'sad'; ov.hair = true; px = 97 + 2.5 * Math.sin(T * 2.6); dy = -Math.round(Math.abs(Math.sin(T * 7)) * 6); dx = Math.round(Math.sin(T * 41) * 2); k = 0.1 * Math.sin(T * 14); }
+      else { e = (Math.floor(T * 6) & 1) ? 'eat' : 'happy'; ov.spiral = true; ov.hair = (Math.floor(T * 1.7) & 1) === 0; ov.tint = true; px = 97 + 2.5 * Math.sin(T * 4.4); dy = -Math.round(Math.abs(Math.sin(T * 10.5)) * 8); dx = Math.round(Math.sin(T * 57) * 2.5); k = 0.14 * Math.sin(T * 27); }
+    } else {
+      const c = T - AE; px = 97; ov.dizzy = true;
+      if (c < 0.7) { e = 'eat'; k = lerp(0, -0.3, easeOut(c / 0.7)); dy = 0; }
+      else if (c < 4.6) { e = 'refuse'; k = -0.3 + 0.015 * Math.sin(T * 5); }
+      else if (c < 5.9) { const r = easeIO((c - 4.6) / 1.3); e = 'sad'; k = lerp(-0.3, 0, r); px = lerp(97, 88, r); ov.dizzy = false; }
+      else { e = c < 6.8 ? 'normal' : 'smile'; px = 88; ov.dizzy = false; }
+    }
+    if (jolt > 0 && T < AE) dx -= Math.round(2 * jolt);
+    if (T >= 4.8 || T >= AE) { pt.x = px; pt.dx = dx; pt.dy = dy; pt.k = k; }
+    pt.expr = (pt.walk >= 0) ? 'normal' : e; pt.ov = ov;
+    return { o, sh, v, pet: pt, punch: null, fear, mad, u };
   },
-  ev: [[0.05, A => dashFx(A)], [0.8, () => { vsfx('knockS'); }], [1.4, () => { vsfx('knockS'); }], [1.9, () => petSay('Avanti, avanti, è aperto!', 1.2)], [2.5, () => vsfx('door')], [3.4, () => { vsfx('ding'); fxStars(CX + 6, 40, 4, 18); }],
-    [4.0, () => sfx('whoosh')], [4.6, () => landFx(58, false)], [9.6, () => petSay('Aò... ma quanto parla?!', 1.3)], [14.45, () => petSay('Aiuto... nun smette più!', 1.3)],
-    [19.35, () => sfx('whoosh')], [20.55, () => vsfx('door')], [21.3, () => { sfx('click'); }], [21.7, () => { sfx('yum'); petSay('Finarmente... fiuuu!', 1.7); }]]
+  ev: (() => {
+    const L = [[0.05, A => dashFx(A)], [0.8, () => vsfx('knockS')], [1.4, () => vsfx('knockS')], [2.5, () => vsfx('door')], [3.4, () => { vsfx('ding'); fxStars(CX + 6, 40, 4, 18); }],
+      [4.0, () => sfx('whoosh')], [4.6, () => landFx(58, false)]];
+    APET.forEach(a => { L.push([AT(a[0]), () => { petSay(a[1], a[2]); if (a[3]) { sweep(780, 240, 0.75, 'sawtooth', 0.035); fxShake(3.5); fxStop(0.05); } }]); });
+    L.push([AE - 1.2, () => sfx('whoosh')], [AE + 0.05, () => { sfx('crash'); fxShake(6); fxStop(0.1); flash = 0.5; }], [AE + 1.7, () => vsfx('door')], [AE + 2.4, () => sfx('click')],
+      [AE + 2.6, () => petSay('Finarmente, silenzio...', 1.7)], [AE + 4.6, () => { sfx('yum'); petSay('Mai più... mai più...', 1.6); }]);
+    return L.sort((a, b) => a[0] - b[0]);
+  })()
 };
+/* ============================================================================
+   CINQUE SCENE PER OGNI OSPITE + MEMORIA DELLE VISITE
+   Ogni scena = oggetto { id, who, title, lr, openT, exitT, dur, greetT, key, echo, lines, stamps, cuts, state, over, under, ev }.
+   state(T) e' una funzione pura del tempo; le CUT sono inserti a schermo intero (grafico, mail, lavagna...).
+   La memoria (S.vis) conta quante volte e' venuto ogni ospite e quali scene ha gia' visto: il pet reagisce di conseguenza.
+   ============================================================================ */
+const Lx = (t, txt, cps) => ({ t, dur: txt.length / (cps || 20) + 0.35, cps: cps || 20, txt });
+const hz = (a, b) => hash(a * 13.37 + (b || 0) * 7.77);
+function chain(t0, arr, cps) { let t = t0; const out = []; arr.forEach(o => { const txt = typeof o === 'string' ? o : o.t, d = txt.length / cps + 0.14 + ((o && o.gap) || 0); out.push({ t, dur: d, cps, txt }); t += d; }); return { lines: out, end: t }; }
+const pset = (pt, e) => { pt.expr = (pt.walk >= 0) ? 'normal' : e; };
+const vtopOf = (A, v) => v.feet - vpGet(A.who).h;
+/* ---------- percorso del visitatore: elenco di segmenti hop / walk / in ---------- */
+function vseg(T, segs) {
+  const r = { x: CX, f: SILL, clip: true, sq: 0, tuck: false, walking: false, ph: 0 };
+  for (const s of segs) {
+    if (T < s.t0) break;
+    const done = T >= s.t1, l = T - s.t1, u = c01((T - s.t0) / (s.t1 - s.t0));
+    if (s.k === 'hop') {
+      if (!done) { const h = hopSeg(T, s.t0, s.t1, s.x0 === undefined ? CX : s.x0, s.x1, SILL, FLOOR, s.pk || 8); r.x = h.x; r.f = h.f; r.clip = false; r.sq = 0.14 * Math.sin(h.u * Math.PI); r.tuck = true; r.walking = false; }
+      else { r.x = s.x1; r.f = FLOOR; r.clip = false; r.sq = l < 0.5 ? -0.25 * Math.exp(-l * 7) * Math.cos(l * 22) : 0; r.tuck = false; r.walking = false; }
+    } else if (s.k === 'walk') {
+      r.f = FLOOR; r.clip = false; r.x = lerp(s.x0, s.x1, easeIO(u)); r.sq = 0; r.tuck = false;
+      if (!done) { r.walking = true; r.ph = T * (s.sp || 2.3); } else r.walking = false;
+    } else if (s.k === 'in') {
+      if (!done) { const h = hopSeg(T, s.t0, s.t1, s.x0, CX, FLOOR, SILL, s.pk || 8); r.x = h.x; r.f = h.f; r.clip = h.u > 0.97; r.tuck = true; r.walking = false; r.sq = 0; }
+      else { r.x = CX; r.f = SILL; r.clip = true; r.tuck = false; r.walking = false; r.sq = 0; }
+    }
+  }
+  return r;
+}
+function vbase(A, T, seg) {
+  const ln = vLine(A, T), talk = !!ln && ln.typing, R = vpGet(A.who).rig, p = vpz({ m: vmouth(T, talk), eye: vblink(T) });
+  p.hd = [0, 0, (talk ? 6 : 2.5) * Math.sin(T * 5)]; p.dy = talk ? -Math.round(Math.abs(Math.sin(T * 8)) * 1.1) : 0;
+  const gz = talk ? 1 : 0.35;
+  if (R.armL) p.aL = [0, 0, gz * (8 + 10 * Math.sin(T * 6.5))];
+  if (R.armR) p.aR = [0, 0, -gz * (8 + 10 * Math.sin(T * 6.5 + 2.1))];
+  if (seg.walking) { const g = vgait(seg.ph, 1); p.lL = g.lL; p.lR = g.lR; p.dy += g.dy; }
+  if (seg.tuck) { p.lL = [0, -2]; p.lR = [0, -2]; }
+  return p;
+}
+function mkState(c) {
+  return function (T, A) {
+    const o = vkf(T, [[0, 0], [c.open, 0], [c.open + 0.4, 1], [c.close, 1], [c.close + 0.45, 0]]);
+    const sh = knockSh(T, c.knocks, c.kamp || 1.2), seg = vseg(T, c.segs), p = vbase(A, T, seg), bk = T < c.open + 0.7;
+    const v = { show: T >= c.open + 0.08 && T < c.close + 0.25, x: seg.x, feet: seg.f, clip: seg.clip, pose: p, sq: seg.sq, sil: bk ? '#0c0b10' : null, glow: bk ? '#fff6c8' : null };
+    if (c.pose) c.pose(p, T, A, seg, v);
+    const pt = petBase(A, T); if (c.pet) c.pet(pt, T, A, v);
+    const cut = (c.cuts || []).find(q => T >= q.t0 && T < q.t1) || null;
+    return { o, sh, v, pet: pt, punch: null, cut, fear: 0, mad: 0, u: 0 };
+  };
+}
+const KN = (a, fx) => a.map(t => [t, () => { vsfx(fx || 'knockH'); fxShake(1.6); dustFromDoor(3); }]);
+const OPENEV = (t, big) => [[t, () => vsfx('door')], [t + 0.38, () => { if (big) { vsfx('bang'); fxShake(5); fxStop(0.07); flash = 0.5; fxRing(CX, 46, '#fff6c8', 2, 70, 0.5, { w: 2 }); } else { sfx('click'); fxShake(1.2); flash = 0.18; } }]];
+const EXITEV = (t0, t1) => [[t0, () => sfx('whoosh')], [t1, () => { vsfx('door'); fxShake(2); dustFromDoor(6); }]];
+/* ---------- piccoli sprite di scena ---------- */
+function envSprite(x, y, col) { x = Math.round(x); y = Math.round(y); rect(x - 1, y - 1, 13, 9, K); rect(x, y, 11, 7, col || '#ffffff'); line1(x, y, x + 5, y + 4, '#9ba7b0'); line1(x + 10, y, x + 5, y + 4, '#9ba7b0'); rect(x + 3, y + 6, 5, 1, '#c4d8e4'); }
+function drawPhone(x, y, ring, t) {
+  x = Math.round(x); y = Math.round(y); rect(x - 2, y - 6, 5, 13, K); rect(x - 1, y - 5, 3, 11, '#2a2a30'); rect(x - 1, y - 5, 3, 2, '#58b8f0'); rect(x, y + 4, 1, 1, '#ffffff');
+  if (ring) for (let i = 0; i < 2; i++) { const d = 3 + i * 3 + (Math.floor(t * 12) % 3); rect(x - 3 - d, y - 4 + i, 1, 2, '#ffffff'); rect(x + 3 + d, y - 4 + i, 1, 2, '#ffffff'); }
+}
+function cutPortrait(A, x, y, face) { const P = vpGet(A.who), hs2 = headSprite(P, face); rect(x - 2, y - 2, hs2.w + 4, 27, K); rect(x - 1, y - 1, hs2.w + 2, 25, '#bfe0f4'); ctx.drawImage(toCanvas(hs2), 0, 0, hs2.w, 23, x, y, hs2.w, 23); }
+function pmark(x, y, col, ok) {                               // spunta / croce disegnate a mano
+  x = Math.round(x); y = Math.round(y);
+  if (ok) { for (let i = 0; i < 4; i++) { rect(x + i, y + 6 + i, 3, 2, K); } for (let i = 0; i < 9; i++) { rect(x + 3 + i, y + 9 - i, 3, 2, K); } for (let i = 0; i < 4; i++) rect(x + 1 + i, y + 6 + i, 2, 1, col); for (let i = 0; i < 9; i++) rect(x + 4 + i, y + 9 - i, 2, 1, col); }
+  else { for (let i = 0; i < 10; i++) { rect(x + i, y + i, 3, 3, K); rect(x + 9 - i, y + i, 3, 3, K); } for (let i = 0; i < 10; i++) { rect(x + i + 1, y + i + 1, 1, 1, col); rect(x + 10 - i, y + i + 1, 1, 1, col); } }
+}
+/* ================================ CUT a schermo intero ================================ */
+function cutChart(A, T, p, t) {
+  rect(0, BAR, W, H - BAR, '#1a2440'); ob(5, 23, 102, 56, '#f4f8fa', '#c4d8e4'); rect(6, 24, 100, 7, '#14246a'); text('REPORT SLA', 56, 25, '#ffffff', 'c');
+  const vals = [99, 97, 92, 78, 41], base = 70, sc = 0.3;
+  rect(14, 33, 1, 38, K); rect(14, base, 90, 1, K); for (let g = 0; g < 3; g++) rect(15, 42 + g * 9, 88, 1, '#dfe9ee');
+  const drop = easeIn(c01((p - 0.52) / 0.3)), v5 = lerp(99, 12, drop), shake = p > 0.86 ? Math.round(Math.sin(T * 60) * 1.5) : 0, lab = ['G', 'F', 'M', 'A', 'M', 'G'];
+  for (let i = 0; i < 6; i++) {
+    const gr = easeOut(c01((p * 10 - i * 0.7) / 0.8)), val = i < 5 ? vals[i] : (p < 0.52 ? 99 : v5), h = Math.round(val * sc * gr), bx = 18 + i * 14 + (i === 5 ? shake : 0);
+    if (h > 0) { rect(bx - 1, base - h - 1, 11, h + 1, K); rect(bx, base - h, 9, h, (i === 5 && drop > 0.05) ? '#d8383a' : '#2b62c4'); rect(bx, base - h, 2, h, (i === 5 && drop > 0.05) ? '#ff7a7a' : '#6a9af0'); text(String(Math.round(val)), bx + 5, base - h - 7, K, 'c'); }
+    text(lab[i], bx + 5, base + 3, '#66727c', 'c');
+  }
+  if (p > 0.52) { const big = Math.round(v5) + '%'; textO(big, 88 + shake, 35, '#d8383a', 'c', 2, '#ffffff'); }
+  if (p > 0.6 && (Math.floor(T * 8) & 1)) { rect(66, 50, 1, 1, '#d8383a'); }
+}
+function cutClock(A, T, p, t) {
+  rect(0, BAR, W, H - BAR, '#2a0a14'); drawBurst(56, 50, T * 1.5, '#4a1020', '#2a0a14', 10, 110);
+  for (let k = 0; k < 7; k++) { const q = (p * 2.4 + k * 0.15) % 1, x = W + 8 - q * (W + 28), y = 24 + hz(k, 3) * 44; rect(x - 1, y - 1, 12, 14, K); rect(x, y, 10, 12, '#f4f8fa'); text('IERI', x + 5, y + 3, '#d8383a', 'c'); rect(x + 1, y + 9, 8, 1, '#c4d8e4'); }
+  const R = 25, cx = 56, cy = 51, zm = easeBack(c01(p / 0.14)), r = Math.max(3, Math.round(R * zm)), red = p > 0.62 ? (Math.floor(T * 8) & 1) : 0;
+  if (p > 0.62) for (const s0 of [-1, 1]) { const bx = cx + s0 * 17 + Math.round(Math.sin(T * 50) * 1.5), by = cy - r - 3; circle(bx, by, 4, K); circle(bx, by, 3, '#f7c92b'); circle(bx, by, 1, '#c99a14'); }
+  oc(cx, cy, r, red ? '#ffb4b4' : '#f4f8fa', '#c4d8e4');
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2 - Math.PI / 2; rect(cx + Math.cos(a) * (r - 3), cy + Math.sin(a) * (r - 3), i % 3 === 0 ? 2 : 1, i % 3 === 0 ? 2 : 1, K); }
+  const ha = -p * 38 - 1.2, ma = -p * 520;
+  line1(cx, cy, cx + Math.cos(ha) * (r - 9), cy + Math.sin(ha) * (r - 9), K); line1(cx + 1, cy, cx + 1 + Math.cos(ha) * (r - 9), cy + Math.sin(ha) * (r - 9), K);
+  line1(cx, cy, cx + Math.cos(ma) * (r - 4), cy + Math.sin(ma) * (r - 4), '#2b62c4'); rect(cx - 1, cy - 1, 3, 3, '#d8383a');
+  if (p > 0.9) { line1(cx, cy, cx - 12, cy - 16, K); line1(cx - 12, cy - 16, cx - 9, cy - 22, K); line1(cx, cy, cx + 14, cy + 10, K); line1(cx + 14, cy + 10, cx + 12, cy + 17, K); for (let k = 0; k < 6; k++) rect(cx + (hz(k, 1) - 0.5) * 60, cy + (hz(k, 2) - 0.5) * 40, 2, 1, '#ffffff'); }
+  if (p > 0.55) { const bn = Math.round(Math.sin(T * 24) * 1); plate('SCADUTO!', 56, 70 + bn, '#ffffff', '#d8383a', 1); }
+}
+function cutMail(A, T, p, t) {
+  rect(0, BAR, W, H - BAR, '#17223c'); ob(4, 23, 78, 56, '#f4f8fa', '#c4d8e4'); rect(5, 24, 76, 7, '#2b62c4'); text('POSTA IN ARRIVO', 43, 25, '#ffffff', 'c');
+  text('DA: CLIENTE', 8, 34, '#66727c'); text('RE RE RE: URGENTE', 8, 41, K); rect(6, 47, 72, 1, '#c4d8e4');
+  const body = ['BUONGIORNO,', 'NESSUN AVVISO SUL', 'FERMO DI IERI.', 'SIAMO FERMI', 'DA 3 GIORNI!!!'], rd = c01(p / 0.85), n = Math.floor(rd * 70);
+  let left = n, y = 49;
+  body.forEach((l, i) => { const s = l.slice(0, Math.max(0, left)); left -= l.length; const hot = i >= 3; if (s) text(s, 8 + (hot ? Math.round(Math.sin(T * 40) * (p > 0.5 ? 1 : 0)) : 0), y, hot ? '#d8383a' : K); y += 6; });
+  const ang = p > 0.5, red = p > 0.58;
+  cutPortrait(A, 83, 28, { m: ang ? (Math.floor(T * 10) & 1 ? 2 : 1) : 0, eye: 0, brow: ang ? 'angry' : 0, red: red ? 1 : 0 }); text('RICCARDO', 95, 54, '#f4f8fa', 'c');
+  if (ang) drawAnger(100, 26, T);
+  if (p > 0.9) for (let k = 0; k < 8; k++) { const q = (p - 0.9) / 0.1; rect(10 + k * 9 + (hz(k, 1) - 0.5) * 20 * q, 30 + hz(k, 2) * 30 + q * 24, 7, 5, '#ffffff'); }
+}
+function cutCompose(A, T, p, t) {
+  rect(0, BAR, W, H - BAR, '#14246a'); ob(6, 23, 100, 56, '#f4f8fa', '#c4d8e4'); rect(7, 24, 98, 7, '#2b62c4'); text('NUOVO MESSAGGIO', 56, 25, '#ffffff', 'c');
+  text('A: TUTTI', 10, 34, K); text('OGG: COMUNICAZIONE????', 10, 41, K); rect(8, 47, 94, 1, '#c4d8e4');
+  const body = ['NEWS: ???', 'IMPATTO: ???', 'CHI AVVISA: ???'], n = Math.floor(c01(p / 0.5) * 36); let left = n, y = 50;
+  body.forEach(l => { const s = l.slice(0, Math.max(0, left)); left -= l.length; if (s) text(s, 10, y, K); y += 7; });
+  const press = p > 0.52 && p < 0.6; rect(80, 68 + (press ? 1 : 0), 22, 9, K); rect(81, 69 + (press ? 1 : 0), 20, 7, '#2e9e49'); text('INVIA', 91, 70 + (press ? 1 : 0), '#ffffff', 'c');
+  if (p > 0.58 && p < 0.78) { const u = (p - 0.58) / 0.2; envSprite(lerp(84, 118, easeIn(u)), lerp(60, 24, easeIn(u)), '#ffffff'); }
+  if (p > 0.74) { const sh = Math.round(Math.sin(T * 40) * (p > 0.8 ? 1 : 0)); ob(16 + sh, 36, 80, 28, '#ffe0e0', '#d8383a'); rect(17 + sh, 37, 78, 7, '#d8383a'); text('ERRORE DI INVIO', 56 + sh, 38, '#ffffff', 'c'); text('CASELLA PIENA', 56 + sh, 48, '#d8383a', 'c'); text('MAIL NON CONSEGNATA', 56 + sh, 55, K, 'c'); }
+}
+const BNODE = [{ x: 20, y: 36, w: 24, t: 'NEWS' }, { x: 56, y: 36, w: 36, t: 'IMPATTO' }, { x: 92, y: 36, w: 24, t: 'COM.' }, { x: 56, y: 64, w: 14, t: '?' }];
+function cutBoard(A, T, p, t) {
+  rect(0, BAR, W, H - BAR, '#3a3f4a'); ob(5, 23, 102, 55, '#ffffff', '#cfd8de'); rect(5, 78, 102, 2, '#9ba7b0');
+  const pairs = [[0, 1], [1, 2], [2, 3], [3, 0], [0, 2], [1, 3], [3, 2], [1, 0], [2, 0], [0, 3], [3, 1]], cols = ['#2b62c4', '#d8383a', '#2e9e49'];
+  let tip = null;
+  pairs.forEach((pr, k) => {
+    const t0 = 0.1 + k * 0.065, u = c01((p - t0) / 0.06); if (u <= 0) return; const a = BNODE[pr[0]], b = BNODE[pr[1]], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1, nx = dx / d, ny = dy / d;
+    const x0 = a.x + nx * 12, y0 = a.y + ny * 8, x1 = b.x - nx * 12, y1 = b.y - ny * 8, ex = lerp(x0, x1, u), ey = lerp(y0, y1, u), c = cols[k % 3];
+    line1(x0, y0, ex, ey, c); line1(x0, y0 + 1, ex, ey + 1, c); if (u >= 1) { line1(x1, y1, x1 - nx * 4 - ny * 3, y1 - ny * 4 + nx * 3, c); line1(x1, y1, x1 - nx * 4 + ny * 3, y1 - ny * 4 - nx * 3, c); } tip = [ex, ey];
+  });
+  BNODE.forEach((n, i) => { if (p < 0.02 + i * 0.03) return; rect(n.x - n.w / 2 - 1, n.y - 6, n.w + 2, 13, '#2b62c4'); rect(n.x - n.w / 2, n.y - 5, n.w, 11, '#ffffff'); text(n.t, n.x, n.y - 2, '#14246a', 'c'); });
+  if (p > 0.82) { const nS = Math.floor((p - 0.82) / 0.18 * 26); for (let k = 0; k < nS; k++) { const x0 = 10 + hz(k, 5) * 90, y0 = 28 + hz(k, 6) * 44, x1 = 10 + hz(k, 7) * 90, y1 = 28 + hz(k, 8) * 44; line1(x0, y0, x1, y1, cols[k % 3]); tip = [x1, y1]; } }
+  if (tip && p < 0.99) { rect(tip[0] - 1, tip[1] - 7, 3, 7, K); rect(tip[0], tip[1] - 6, 1, 5, '#d8383a'); }
+  if (p > 0.93) textO('?', 56, 44, '#d8383a', 'c', 4, '#ffffff');
+}
+const QZ = [['NEWS', 'IO: BOH', 0], ['IMPATTO', 'IO: 42', 0], ['COMUNICAZIONE', 'IO: FORSE', 0], ['APPROVAZIONE', "IO: ER CAFFÈ", 0], ['NEWS DI NUOVO', 'IO: NEWS!', 1]];
+function cutQuiz(A, T, p, t) {
+  rect(0, BAR, W, H - BAR, '#14246a'); ob(4, 23, 104, 56, '#f4f8fa', '#c4d8e4'); rect(5, 24, 102, 7, '#2b62c4'); text('QUIZ A PUNTI', 56, 25, '#ffffff', 'c');
+  const slot = 0.18, kk = Math.max(0, (p - 0.04) / slot), k = Math.min(4, Math.floor(kk)), u = c01(kk - k), q = QZ[k];
+  cutPortrait(A, 8, 33, { m: u < 0.35 ? (Math.floor(T * 10) & 1 ? 2 : 1) : 0, eye: 'wide', brow: 'up', red: 0 });
+  if (u > 0.02) plate(q[0] + '???', 66, 34, '#14246a', '#fffbea', 1, '#f7c92b');
+  if (u > 0.3) plate(q[1], 74, 46, '#1b3f8a', '#e4f0fa', 1, '#2b62c4');
+  if (u > 0.55) { const b = u < 0.7 ? Math.round((0.7 - u) / 0.15 * 5) : 0; pmark(88, 52 - b, q[2] ? '#2e9e49' : '#d8383a', q[2]); }
+  let pts = 0; for (let i = 0; i < 5; i++) { const done = i < k || (i === k && u > 0.6); rect(10 + i * 11, 68, 10, 9, K); rect(11 + i * 11, 69, 8, 7, done ? (QZ[i][2] ? '#7ee89a' : '#ffb4b4') : '#ffffff'); if (done && QZ[i][2]) pts++; }
+  text('PUNTI: ' + pts + '/5', 85, 70, K, 'c');
+}
+function cutTutorial(variant) {
+  return function (A, T, p, t) {
+    rect(0, BAR, W, H - BAR, '#0d3a2a'); ob(8, 23, 96, 56, '#f4f8fa', '#c4d8e4'); rect(9, 24, 94, 7, '#2e9e49'); text('GUIDA RAPIDA', 56, 25, '#ffffff', 'c');
+    let n, tot, err = false, bonus = false;
+    if (variant === 0) { const w = c01(p / 0.78); n = Math.max(1, Math.round(47 * easeIn(w) * 0.6 + 47 * w * 0.4)); tot = 47; if (p > 0.8) { n = 1; tot = 52; err = true; } }
+    else { n = Math.min(52, Math.max(1, Math.round(52 * easeOut(c01(p / 0.45))))); tot = 52; if (p > 0.55) { n = 1; tot = 3; bonus = true; } }
+    plate('PASSO ' + n + ' DI ' + tot, 56, 36, K, '#fffbea', 1, '#f7c92b');
+    rect(13, 48, 86, 7, K); rect(14, 49, 84, 5, '#dfe9ee'); rect(14, 49, Math.round(84 * n / tot), 5, err ? '#d8383a' : '#2e9e49');
+    const cxm = 22 + (Math.floor(T * 6) % 5) * 15, cym = 62 + Math.round(Math.sin(T * 9) * 3); rect(cxm, cym, 1, 9, K); rect(cxm, cym, 6, 1, K); line1(cxm, cym, cxm + 6, cym + 6, K); rect(cxm + 1, cym + 2, 1, 5, '#ffffff');
+    if (Math.floor(T * 6) % 2) { rect(cxm - 4, cym - 1, 3, 1, '#2b62c4'); rect(cxm - 1, cym - 4, 1, 3, '#2b62c4'); }
+    for (let i = 0; i < 3; i++) { rect(70 + i * 11, 61, 9, 9, K); rect(71 + i * 11, 62, 7, 7, ['#58b8f0', '#f7c92b', '#d8383a'][i]); }
+    if (err) plate('ERRORE! DA CAPO', 56, 72, '#ffffff', '#d8383a');
+    if (bonus) plate('BONUS: SOLO 3!', 56, 72, '#14246a', '#f7c92b');
+  };
+}
+function cutHead(face, bg1, bg2) {                              // primo piano a testa intera
+  return function (A, T, p, t) {
+    const P = vpGet(A.who), hs2 = headSprite(P, face), z = p < 0.12 ? lerp(1.2, 2, easeOut(p / 0.12)) : 2, sk = Math.round(Math.sin(T * 70) * 1.5 * (1 - p));
+    rect(0, BAR, W, H - BAR, bg2); drawBurst(56, 46, T * 1.4, bg1, bg2, 10, 110);
+    ctx.drawImage(toCanvas(hs2), 0, 0, hs2.w, hs2.h, Math.round(56 - P.rig.neck[0] * z + sk), Math.round(16 + (z < 2 ? 4 : 0)), Math.round(hs2.w * z), Math.round(hs2.h * z));
+  };
+}
+/* ================================ RICCARDO ================================ */
+const RC1 = {
+  id: 1, who: 'ric', title: 'IL REPORT', lr: true, openT: 2.4, exitT: 17.2, dur: 21.2, greetT: 1.9, key: [11.65, 13.5], echo: 'DODICI PER CENTO?! INACCETTABILE!', puffs: [11.5, 16.9], anger: [11.6, 16.9], shout: [11.9, 16.8],
+  lines: [Lx(3.9, 'BUONGIORNO! HO LETTO IL REPORT.', 20), Lx(5.5, 'GUARDI UN PO QUESTO GRAFICO.', 20), Lx(11.7, 'DODICI PER CENTO?!', 20), Lx(13.1, 'INACCETTABILE!!! ERA NOVANTANOVE!!!', 20), Lx(15.9, 'MA COME SI FA?!', 20)],
+  stamps: [{ t0: 11.9, t1: 13.0, txt: 'INACCETTABILE', sub: null, y: 62 }], punch: [], cuts: [{ t0: 6.6, t1: 11.5, draw: cutChart }],
+  ev: [[0.05, A => dashFx(A)]].concat(KN([0.8, 1.05, 1.3, 1.55]), OPENEV(2.4, true), [[3.2, () => sfx('whoosh')], [3.7, () => landFx(56, false)], [6.6, () => sfx('riser2')], [9.15, () => sweep(900, 120, 1.3, 'sawtooth', 0.04)], [10.6, () => { sfx('boom'); fxShake(5); }],
+    [11.5, () => { sfx('thunder'); fxShake(5); fxStop(0.1); flash = 0.6; fxRing(CX, 44, '#ff4060', 2, 60, 0.5); }], [11.9, () => { vsfx('stamp'); fxShake(5); fxStop(0.07); }], [17.9, () => petSay("Er... è 'n problema de arrotondamento?", 2.2)]], EXITEV(17.0, 17.9))
+};
+RC1.state = mkState({
+  open: 2.4, close: 17.8, knocks: [0.8, 1.05, 1.3, 1.55], kamp: 2, cuts: RC1.cuts, segs: [{ k: 'hop', t0: 3.2, t1: 3.7, x1: 56 }, { k: 'in', t0: 17.35, t1: 17.8, x0: 56 }],
+  pose(p, T, A, seg, v) {
+    const snap = T >= 11.5 && T < 17.0, talk = p.m > 0; p.brow = snap ? 'angry' : 0; p.red = snap ? (T < 11.9 ? (Math.floor(T * 18) & 1) : 1) : 0; if (snap) p.eye = 0;
+    if (!snap) { p.aL = [0, 0, 6 * Math.sin(T * 7)]; p.hd = [0, 0, 3 * Math.sin(T * 2.2)]; }
+    else { p.aL = [0, 0, 26 * Math.sin(T * 12.5) + 8]; p.hd = [talk ? Math.round(Math.sin(T * 45)) : 0, talk ? -1 : 0, 6 * Math.sin(T * 8)]; p.lx = Math.round(Math.sin(T * 9)); if (T < 12.2) v.sq = -0.3 * Math.exp(-(T - 11.5) * 7) * Math.cos((T - 11.5) * 22); }
+  },
+  pet(pt, T) { pset(pt, T < 1.9 ? 'normal' : T < 6.6 ? 'smile' : T < 11.5 ? 'normal' : T < 17.2 ? 'sad' : 'smile'); if (T >= 11.5 && T < 17.2) { pt.dx = Math.round(Math.sin(T * 38)); pt.k = -0.07; pt.dx -= Math.round(2 * (vpulse(T, 11.9, 0.25))); } }
+});
+const RC2 = {
+  id: 2, who: 'ric', title: 'LA TELEFONATA', lr: true, openT: 2.2, exitT: 16.4, dur: 20.4, greetT: 1.7, key: [5.35, 7.0], echo: 'NO, NON È ACCETTABILE!', puffs: [14.4, 16.2], anger: [14.4, 16.2], shout: null,
+  lines: [Lx(3.7, 'PRONTO?! SÌ, SONO IO!', 20), Lx(5.4, 'NO, NON È ACCETTABILE!', 21), Lx(7.4, 'MA COME SI FA?!', 20), Lx(9.0, "ASPETTI, CE L'ABBIAMO QUI.", 20), Lx(15.2, 'INACCETTABILE!!! ADDIO!', 22)],
+  stamps: [{ t0: 15.3, t1: 16.3, txt: 'INACCETTABILE', sub: null, y: 62 }], punch: [], cuts: [],
+  voice: [{ t0: 4.2, t1: 5.2, txt: 'BZZ BZZ' }, { t0: 6.2, t1: 7.2, txt: 'SCUSI...' }, { t0: 8.0, t1: 9.0, txt: 'MA SENTA...' }],
+  ev: [[0.05, A => dashFx(A)], [0.2, () => { for (let i = 0; i < 4; i++) beep(1480, 0.07, 'square', 0.035, i * 0.16); }]].concat(KN([0.95, 1.2], 'knockL'), OPENEV(2.2, false), [[3.0, () => sfx('whoosh')], [3.5, () => landFx(64, false)], [10.3, () => sfx('whoosh')], [11.0, () => sfx('click')],
+    [11.4, () => petSay('Pronto?', 1.0)], [12.4, () => petSay('Sì... sì... no...', 1.3)], [13.6, () => petSay('Eh? Ma...', 1.0)], [14.0, () => { sfx('hurt'); fxShake(5); fxStop(0.08); flash = 0.4; fxRing(CX + 14, 40, '#ffffff', 2, 64, 0.5); }], [14.45, () => sfx('whoosh')], [15.3, () => { vsfx('stamp'); fxShake(5); fxStop(0.07); }], [17.5, () => petSay('Fiuu... riattacca sempre!', 1.8)]], EXITEV(16.2, 16.9))
+};
+RC2.phone = (A, T, v, pt) => {
+  const hx = v.x - 11, hy = vtopOf(A, v) + 12, px = pt.x - 17, py = FLOOR - 65 + (pt.dy || 0) + 14;
+  if (T < 10.3 || T >= 15.2) return { x: hx, y: hy, held: 1 };
+  if (T < 11.0) { const u = easeIO((T - 10.3) / 0.7); return { x: lerp(hx, px, u), y: lerp(hy, py, u) - Math.sin(u * Math.PI) * 14, held: 0 }; }
+  if (T < 14.45) return { x: px + (T > 13.9 ? Math.round(Math.sin(T * 60) * 1.5) : 0), y: py, held: 2 };
+  const u = easeIO((T - 14.45) / 0.75); return { x: lerp(px, hx, u), y: lerp(py, hy, u) - Math.sin(u * Math.PI) * 14, held: 0 };
+};
+RC2.state = mkState({
+  open: 2.2, close: 16.9, knocks: [0.95, 1.2], kamp: 1, cuts: [], segs: [{ k: 'hop', t0: 3.0, t1: 3.5, x1: 64 }, { k: 'walk', t0: 5.0, t1: 6.4, x0: 64, x1: 50 }, { k: 'walk', t0: 7.2, t1: 8.8, x0: 50, x1: 74 }, { k: 'walk', t0: 9.4, t1: 10.4, x0: 74, x1: 60 }, { k: 'walk', t0: 12.0, t1: 12.8, x0: 60, x1: 66 }, { k: 'in', t0: 16.45, t1: 16.9, x0: 66 }],
+  pose(p, T, A, seg, v) {
+    const snap = T >= 14.4 && T < 16.3; p.brow = snap ? 'angry' : 0; p.red = snap ? (T < 14.8 ? (Math.floor(T * 18) & 1) : 1) : 0; if (snap) { p.eye = 0; p.aL = [0, 0, 24 * Math.sin(T * 12.5) + 8]; p.lx = Math.round(Math.sin(T * 9)); }
+    if (T >= 9.8 && T < 14.4) p.aL = [0, 0, 36 + 6 * Math.sin(T * 6)];
+  },
+  pet(pt, T, A, v) {
+    pset(pt, T < 1.8 ? 'normal' : T < 10.3 ? 'smile' : T < 11.0 ? 'normal' : T < 13.9 ? (Math.floor(T * 9) & 1 ? 'talk' : 'normal') : T < 15.2 ? 'sad' : T < 16.4 ? 'refuse' : 'smile');
+    if (T >= 10.4) pt.x = lerp(86, 93, easeIO(c01((T - 10.4) / 0.6))); if (T >= 13.9 && T < 14.5) { pt.dy = -Math.round(Math.sin((T - 13.9) / 0.6 * Math.PI) * 6); pt.k = 0.1; } if (T >= 16.5) pt.x = lerp(93, 86, easeIO(c01((T - 16.5) / 0.8)));
+  }
+});
+RC2.over = (A, T, st, t) => {
+  const v = st.v; if (!v.show) return; const ph = RC2.phone(A, T, v, st.pet), ring = T < 3.0;
+  drawPhone(ph.x, ph.y, ring || (ph.held === 2 && T > 13.9), t);
+  for (const w of RC2.voice) if (T >= w.t0 && T < w.t1 && v.show) { const x = clamp(ph.x - 22, 3, W - 40); plate(w.txt, x, ph.y - 18 + Math.round(Math.sin(T * 8)), '#14246a', '#cfd8de', 1, '#9ba7b0'); }
+  if (T >= 13.9 && T < 14.5) { const sh = Math.round(Math.sin(T * 60) * 2); textO('INACCETTABILE!!!', 56 + sh, 64, '#ff4060', 'c', 1, '#ffffff'); }
+};
+const RC3 = {
+  id: 3, who: 'ric', title: 'LA SCADENZA', lr: true, openT: 2.4, exitT: 16.2, dur: 20.0, greetT: 1.9, key: [11.7, 13.4], echo: 'SCADUTO! CAPITO?! SCADUTO!!!', puffs: [11.6, 15.8], anger: [11.7, 15.8], shout: [12.0, 15.7],
+  lines: [Lx(3.7, 'CHE ORE SONO?', 16), Lx(5.1, 'ESATTO. ERA PER IERI!!!', 20), Lx(11.7, 'SCADUTO! CAPITO?! SCADUTO!!!', 22), Lx(14.0, 'INACCETTABILE!', 20)],
+  stamps: [{ t0: 12.0, t1: 13.3, txt: 'SCADUTO!', sub: null, y: 62 }], punch: [], cuts: [{ t0: 6.4, t1: 11.4, draw: cutClock }],
+  ev: [[0.05, A => dashFx(A)]].concat(KN([0.8, 1.05, 1.3, 1.55]), OPENEV(2.4, true), [[3.2, () => sfx('whoosh')], [3.7, () => landFx(56, false)], [6.4, () => sfx('riser2')], [7.4, () => sfx('bell')], [9.3, () => sfx('bell')], [9.9, () => sfx('siren')], [11.0, () => { sfx('crash'); fxShake(5); }],
+    [11.4, () => { sfx('thunder'); fxShake(6); fxStop(0.1); flash = 0.6; fxRing(CX, 44, '#ff4060', 2, 60, 0.5); }], [12.0, () => { vsfx('stamp'); fxShake(5); fxStop(0.07); }], [15.4, () => petSay("È l'ora legale, aò?", 1.8)]], EXITEV(16.0, 16.7))
+};
+RC3.state = mkState({
+  open: 2.4, close: 16.7, knocks: [0.8, 1.05, 1.3, 1.55], kamp: 2, cuts: RC3.cuts, segs: [{ k: 'hop', t0: 3.2, t1: 3.7, x1: 56 }, { k: 'in', t0: 16.25, t1: 16.7, x0: 56 }],
+  pose(p, T, A, seg, v) {
+    const snap = T >= 11.4 && T < 16.0, talk = p.m > 0; p.brow = snap ? 'angry' : (T >= 5.0 && T < 6.4 ? 'angry' : 0); p.red = snap ? (T < 11.8 ? (Math.floor(T * 18) & 1) : 1) : 0; if (snap) p.eye = 0;
+    if (T >= 5.0 && T < 6.4) p.aL = [0, 0, 44 + 4 * Math.sin(T * 9)];
+    else if (snap) { p.aL = [0, 0, 26 * Math.sin(T * 12.5) + 8]; p.hd = [talk ? Math.round(Math.sin(T * 45)) : 0, talk ? -1 : 0, 6 * Math.sin(T * 8)]; p.lx = Math.round(Math.sin(T * 9)); }
+  },
+  pet(pt, T) { pset(pt, T < 6.4 ? 'smile' : T < 16.2 ? 'sad' : 'smile'); if (T >= 11.4 && T < 16.2) { pt.dx = Math.round(Math.sin(T * 38)); pt.k = -0.07; } }
+});
+const RC4 = {
+  id: 4, who: 'ric', title: 'LA MAIL', lr: true, openT: 2.4, exitT: 18.2, dur: 22.4, greetT: 1.9, key: [12.4, 14.2], echo: 'IL FERMO DI IERI?! TRE GIORNI?!', puffs: [12.3, 16.6], anger: [12.4, 16.6], shout: [12.7, 16.5],
+  lines: [Lx(3.8, 'ALLORA, VEDIAMO UN ATTIMO...', 14), Lx(12.4, 'IL FERMO DI IERI?! TRE GIORNI?!', 22), Lx(14.9, 'INACCETTABILE!!!', 22), Lx(17.0, '...TUTTO A POSTO.', 14)],
+  stamps: [{ t0: 15.0, t1: 16.2, txt: 'INACCETTABILE', sub: null, y: 62 }], punch: [], cuts: [{ t0: 5.6, t1: 12.2, draw: cutMail }],
+  ev: [[0.05, A => dashFx(A)]].concat(KN([0.8, 1.05, 1.3, 1.55]), OPENEV(2.4, true), [[3.2, () => sfx('whoosh')], [3.7, () => landFx(56, false)], [5.6, () => sfx('click')], [9.0, () => sfx('riser')], [11.7, () => { sfx('crash'); fxShake(4); }],
+    [12.3, () => { sfx('thunder'); fxShake(5); fxStop(0.1); flash = 0.6; fxRing(CX, 44, '#ff4060', 2, 60, 0.5); }], [15.0, () => { vsfx('stamp'); fxShake(6); fxStop(0.07); }], [18.0, () => petSay("Ma... mo' sta bene?", 1.8)], [17.9, () => sfx('chime')]], EXITEV(18.0, 18.9))
+};
+RC4.state = mkState({
+  open: 2.4, close: 18.85, knocks: [0.8, 1.05, 1.3, 1.55], kamp: 2, cuts: RC4.cuts, segs: [{ k: 'hop', t0: 3.2, t1: 3.7, x1: 56 }, { k: 'in', t0: 18.4, t1: 18.85, x0: 56 }],
+  pose(p, T, A, seg, v) {
+    const snap = T >= 12.3 && T < 16.6, talk = p.m > 0; p.brow = snap ? 'angry' : 0; p.red = snap ? (T < 12.7 ? (Math.floor(T * 18) & 1) : 1) : 0; if (snap) p.eye = 0;
+    if (snap) { p.aL = [0, 0, 26 * Math.sin(T * 12.5) + 8]; p.hd = [talk ? Math.round(Math.sin(T * 45)) : 0, talk ? -1 : 0, 6 * Math.sin(T * 8)]; p.lx = Math.round(Math.sin(T * 9)); if (T < 13.0) v.sq = -0.3 * Math.exp(-(T - 12.3) * 7) * Math.cos((T - 12.3) * 22); }
+    else if (T >= 16.6) p.aL = [0, 0, 4 * Math.sin(T * 3)];
+  },
+  pet(pt, T) { pset(pt, T < 5.6 ? 'smile' : T < 12.3 ? 'normal' : T < 16.6 ? 'sad' : 'normal'); if (T >= 12.3 && T < 16.6) { pt.dx = Math.round(Math.sin(T * 38)); pt.k = -0.07; } }
+});
+/* ================================ DAVIDE ================================ */
+const DV1 = {
+  id: 1, who: 'dav', title: 'LA MAIL', lr: true, openT: 2.1, exitT: 17.4, dur: 21.4, greetT: 1.5, key: [11.4, 13.0], echo: 'CASELLA PIENA???', qmark: [11.4, 17.0],
+  lines: [Lx(3.0, 'NEWS???', 14), Lx(4.2, 'AVETE COMUNICATO???', 16), Lx(11.4, 'CASELLA PIENA???', 16), Lx(13.0, 'COMUNICAZIONE!!!', 16), Lx(15.2, "E L'IMPATTO???", 16)],
+  stamps: [{ t0: 13.1, t1: 14.4, txt: 'COMUNICAZIONE', sub: null, y: 62 }], punch: [], cuts: [{ t0: 5.6, t1: 11.2, draw: cutCompose }],
+  ev: [[0.05, A => dashFx(A)]].concat(KN([0.8, 0.98, 1.16], 'knockL'), OPENEV(2.1, false), [[3.3, () => sfx('whoosh')], [3.8, () => landFx(57, false)], [5.6, () => sfx('click')], [8.0, () => sfx('sparkle')], [9.6, () => { sfx('whoosh'); }], [10.2, () => vsfx('question')], [10.4, () => { sfx('crash'); fxShake(4); }],
+    [11.4, () => { vsfx('stamp'); fxShake(5); fxStop(0.06); }], [13.1, () => { vsfx('stamp'); fxShake(5); fxStop(0.06); }], [16.6, () => petSay("'Na pioggia de mail, aò!", 1.7)]], EXITEV(17.2, 17.9))
+};
+DV1.state = mkState({
+  open: 2.1, close: 17.85, knocks: [0.8, 0.98, 1.16], kamp: 1.4, cuts: DV1.cuts, segs: [{ k: 'hop', t0: 3.3, t1: 3.8, x1: 57 }, { k: 'in', t0: 17.4, t1: 17.85, x0: 57 }],
+  pose(p, T) { const q = T >= 4.2; p.eye = q ? 'wide' : p.eye; p.brow = q ? 'up' : 0; p.hd = [0, 0, (p.m ? 7 : 3) * Math.sin(T * 5.5)]; },
+  pet(pt, T) { pset(pt, T < 1.5 ? 'normal' : T < 5.6 ? 'smile' : T < 11.4 ? 'normal' : 'sad'); if (T >= 11.4) { pt.dx = Math.round(Math.sin(T * 30) * 0.8); pt.k = -0.04; } }
+});
+DV1.over = (A, T, st, t) => {
+  if (T < 11.2 || T > 17.6) return; const f = c01((17.6 - T) / 0.8);
+  for (let k = 0; k < 60; k++) {
+    const t0 = 11.3 + k * 0.1, fall = T - t0; if (fall < 0) break; const x = 4 + hz(k, 1) * 94, landY = FLOOR - 7 - ((k * 7) % 5) * 2 - Math.floor(k / 14) * 4, y = -8 + fall * (50 + hz(k, 2) * 20);
+    if (y < landY) envSprite(x, y, '#ffffff'); else if (f > 0.05) envSprite(x, landY + 0, k % 3 ? '#ffffff' : '#fff6c8');
+  }
+};
+const DV2 = {
+  id: 2, who: 'dav', title: 'LA LAVAGNA', lr: true, openT: 2.1, exitT: 16.6, dur: 20.6, greetT: 1.5, key: [11.8, 13.3], echo: "CHI È L'OWNER???", qmark: [11.8, 16.5],
+  lines: [Lx(3.0, 'NEWS???', 14), Lx(11.8, "CHI È L'OWNER???", 16), Lx(13.6, 'IMPATTO??? COMUNICAZIONE???', 18)],
+  stamps: [{ t0: 13.7, t1: 14.9, txt: 'COMUNICAZIONE', sub: null, y: 62 }], punch: [], cuts: [{ t0: 4.4, t1: 11.6, draw: cutBoard }],
+  ev: [[0.05, A => dashFx(A)]].concat(KN([0.8, 0.98, 1.16], 'knockL'), OPENEV(2.1, false), [[3.3, () => sfx('whoosh')], [3.8, () => landFx(57, false)], [4.4, () => sfx('click')], [6.0, () => sfx('sift')], [7.2, () => sfx('sift')], [8.4, () => sfx('grind')], [9.6, () => sfx('grind')], [11.0, () => sfx('riser2')],
+    [11.8, () => { vsfx('stamp'); fxShake(4); fxStop(0.06); }], [13.7, () => { vsfx('stamp'); fxShake(5); fxStop(0.06); }], [15.6, () => petSay("Nun ce capisco 'ste frecce...", 1.8)]], EXITEV(16.4, 17.1))
+};
+DV2.state = mkState({
+  open: 2.1, close: 17.05, knocks: [0.8, 0.98, 1.16], kamp: 1.4, cuts: DV2.cuts, segs: [{ k: 'hop', t0: 3.3, t1: 3.8, x1: 57 }, { k: 'in', t0: 16.6, t1: 17.05, x0: 57 }],
+  pose(p, T) { const q = T >= 11.7; p.eye = q ? 'wide' : p.eye; p.brow = q ? 'up' : 0; p.hd = [0, 0, (p.m ? 7 : 3) * Math.sin(T * 5.5)]; },
+  pet(pt, T) { pset(pt, T < 1.5 ? 'normal' : T < 4.4 ? 'smile' : T < 11.8 ? 'normal' : 'sad'); if (T >= 11.8 && T < 16.6) { pt.dx = Math.round(Math.sin(T * 30) * 0.8); pt.k = -0.04; } }
+});
+const DV3 = {
+  id: 3, who: 'dav', title: 'IL QUIZ', lr: true, openT: 2.1, exitT: 18.4, dur: 22.4, greetT: 1.5, key: [14.8, 16.3], echo: 'UNO SU CINQUE???', qmark: [14.8, 18.3],
+  lines: [Lx(3.0, 'FACCIAMO UN QUIZ???', 16), Lx(14.8, 'UNO SU CINQUE???', 16), Lx(16.5, 'NEWS??? IMPATTO???', 18)],
+  stamps: [{ t0: 14.9, t1: 16.0, txt: '1 SU 5!', sub: null, y: 62 }], punch: [], cuts: [{ t0: 4.6, t1: 14.6, draw: cutQuiz }],
+  ev: [[0.05, A => dashFx(A)]].concat(KN([0.8, 0.98, 1.16], 'knockL'), OPENEV(2.1, false), [[3.3, () => sfx('whoosh')], [3.8, () => landFx(57, false)], [4.6, () => sfx('click')]],
+    [0, 1, 2, 3].map(k => [4.6 + (0.04 + 0.18 * k + 0.6 * 0.18) * 10, () => { sfx('no'); fxShake(1.2); }]), [[4.6 + (0.04 + 0.18 * 4 + 0.6 * 0.18) * 10, () => { sfx('tada'); fxShake(1.2); }], [14.9, () => { vsfx('stamp'); fxShake(5); fxStop(0.06); }], [18.0, () => petSay('Almeno una... aò!', 1.5)]], EXITEV(18.2, 18.9))
+};
+DV3.state = mkState({
+  open: 2.1, close: 18.85, knocks: [0.8, 0.98, 1.16], kamp: 1.4, cuts: DV3.cuts, segs: [{ k: 'hop', t0: 3.3, t1: 3.8, x1: 57 }, { k: 'in', t0: 18.4, t1: 18.85, x0: 57 }],
+  pose(p, T) { const q = T >= 3.0; p.eye = q ? 'wide' : p.eye; p.brow = q ? 'up' : 0; p.hd = [0, 0, (p.m ? 7 : 3) * Math.sin(T * 5.5)]; },
+  pet(pt, T) { pset(pt, T < 1.5 ? 'normal' : T < 4.6 ? 'smile' : T < 14.8 ? 'normal' : 'sad'); if (T >= 14.8 && T < 18.3) { pt.dx = Math.round(Math.sin(T * 30) * 0.8); pt.k = -0.04; } }
+});
+const DV4 = {
+  id: 4, who: 'dav', title: 'IL MEGAFONO', lr: true, openT: 2.1, exitT: 17.0, dur: 21.0, greetT: 1.5, key: [8.2, 9.8], echo: 'COMUNICAZIONE!!!', qmark: null,
+  lines: [Lx(3.2, 'SCUSATE... UN ATTIMO!', 16), Lx(5.0, 'NEWS!!!', 9), Lx(6.4, 'IMPATTO!!!', 11), Lx(8.2, 'COMUNICAZIONE!!!', 14), Lx(10.4, 'ASCOLTATE!!! CHI COMUNICA???', 16), Lx(13.2, 'NEWS!!! IMPATTO!!! COMUNICAZIONE!!!', 22)],
+  stamps: [{ t0: 8.3, t1: 9.4, txt: 'COMUNICAZIONE', sub: null, y: 62 }], punch: [], cuts: [{ t0: 6.4, t1: 6.95, draw: cutHead({ m: 2, eye: 'wide', brow: 'up', red: 0 }, '#2b62c4', '#f7c92b') }],
+  ev: [[0.05, A => dashFx(A)]].concat(KN([0.8, 0.98, 1.16], 'knockL'), OPENEV(2.1, false), [[3.3, () => sfx('whoosh')], [3.8, () => landFx(57, false)]],
+    [5.0, 6.4, 8.2, 10.4, 13.2].map(tt => [tt, () => { sfx('horn'); fxShake(3.5); fxStop(0.05); fxRing(66, 44, '#ffffff', 3, 90, 0.6, { w: 2 }); fxRing(66, 44, '#7fdcff', 3, 60, 0.5); }]),
+    [[8.3, () => { vsfx('stamp'); fxShake(5); }], [9.2, () => sweep(2600, 3200, 0.7, 'square', 0.02)], [12.55, () => petSay('Ho le orecchie che fischiano!', 1.3)], [15.6, () => { sfx('thump'); fxShake(3); }], [16.2, () => petSay('Er megafono... pure basta!', 1.6)]], EXITEV(16.8, 17.5))
+};
+DV4.state = mkState({
+  open: 2.1, close: 17.45, knocks: [0.8, 0.98, 1.16], kamp: 1.4, cuts: DV4.cuts, segs: [{ k: 'hop', t0: 3.3, t1: 3.8, x1: 57 }, { k: 'in', t0: 17.0, t1: 17.45, x0: 57 }],
+  pose(p, T, A, seg, v) { const sh = T >= 5.0 && T < 14.6; p.eye = sh ? 'wide' : p.eye; p.brow = sh ? 'up' : 0; if (sh) { p.hd = [Math.round(Math.sin(T * 40)), -1, 5 * Math.sin(T * 7)]; p.lx = Math.round(Math.sin(T * 30)); } },
+  pet(pt, T) {
+    pset(pt, T < 1.5 ? 'normal' : T < 5.0 ? 'smile' : T < 12 ? 'refuse' : T < 17 ? 'sad' : 'normal'); const ears = T >= 5.0 && T < 16.0; pt.ov = ears ? { ears: true, spiral: T > 11.5 } : {};
+    if (T >= 5.0) pt.x = lerp(86, 98, easeIO(c01((T - 5.0) / 0.8))); if (T >= 16.0) pt.x = lerp(98, 86, easeIO(c01((T - 16.0) / 0.8))); if (ears) { pt.dx = Math.round(Math.sin(T * 38) * 2); pt.k = -0.08; }
+  }
+});
+DV4.over = (A, T, st, t) => {
+  const v = st.v; if (!v.show || T < 3.9 || T >= 15.6) return; const mx = Math.round(v.x + 9), my = Math.round(vtopOf(A, v) + 17), sh = T >= 5.0 && T < 14.6 ? Math.round(Math.sin(T * 40)) : 0;
+  const m = pmNew(); pmRect(m, mx, my + sh - 2, 4, 5, '#d8383a'); for (let i = 0; i < 8; i++) pmRect(m, mx + 4 + i, my + sh - 3 - Math.round(i * 0.5), 1, 5 + Math.round(i * 1.0), i % 3 ? '#cfd8de' : '#ffffff'); pmDraw(m);
+  const tk = T >= 8.0 && T < 14.5; if (tk) { const u = (T - 8.0) / 6.5, x = Math.round(W + 4 - u * 330), txt = 'COMUNICAZIONE!!! NEWS!!! IMPATTO!!! COMUNICAZIONE!!!'; rect(0, 69, W, 11, K); rect(0, 70, W, 9, '#d8383a'); text(txt, x, 71, '#ffffff', 'l', 2); rect(0, 69, W, 1, '#ffffff'); }
+  if (T >= 9.0 && T < 9.7) { for (let k = 0; k < 9; k++) { const x0 = 10 + k * 11, ph = (T * 40 + k * 3) % 8; line1(x0, 50 + ph, x0 + 5, 54 - ph, '#ffffff'); line1(x0 + 5, 54 - ph, x0 + 8, 51 + ph, '#7fdcff'); } }
+};
+/* ================================ ALESSANDRO ================================ */
+const AL1c = chain(3.4, ['BUONGIORNO! SCUSI IL DISTURBO!', 'ERO PASSATO PERCHÉ MI HANNO DETTO CHE', 'PRIMA DEL TICKET CI VUOLE UN CAFFÈ.', 'IL CAFFÈ, SA, È FONDAMENTALE: LO PRENDO', 'SEMPRE ALLE NOVE, MA OGGI ALLE NOVE', 'ERO IN RIUNIONE, QUINDI ALLE DIECI,', 'CHE PERÒ È TROPPO TARDI, QUINDI ALLE', 'NOVE E MEZZA, CHE È UN ORARIO STRANO.',
+  'VUOLE UN CAFFÈ? È FREDDO, MA È CAFFÈ.', 'NO? PECCATO. ALLORA LO LASCIO A LEI:', 'SI SIEDA, LO BEVA CON CALMA, E INTANTO', 'IO LE SPIEGO IL TICKET, CHE È UNA STORIA.', 'IL PC, SA, SI ACCENDE, MA POI SI SPEGNE,', 'E ALLORA IO LO RIACCENDO, E POI...', "AH, IL CAFFÈ! L'HA BEVUTO? BENISSIMO."], 42);
+const CF1 = AL1c.lines[8].t + 1.1, CF2 = CF1 + 0.9, CF3 = CF2 + 1.3, AE1 = AL1c.end;
+const AL1 = {
+  id: 1, who: 'ale', title: 'IL CAFFÈ', lr: true, long: true, openT: 2.5, exitT: AE1, dur: AE1 + 6.2, greetT: 1.9, key: [AL1c.lines[8].t, AL1c.lines[8].t + 1.6], echo: 'È FREDDO, MA È CAFFÈ!', lines: AL1c.lines, stamps: [], punch: [], cuts: [],
+  ev: [[0.05, A => dashFx(A)]].concat(KN([0.8, 1.4], 'knockS'), OPENEV(2.5, false), [[3.4, () => { vsfx('ding'); fxStars(CX + 6, 40, 4, 18); }], [4.0, () => sfx('whoosh')], [4.6, () => landFx(58, false)], [CF1, () => sfx('whoosh')], [CF1 + 0.8, () => { sfx('cap'); }], [CF2, () => sfx('slurp')], [CF3, () => { sfx('powerup'); fxShake(4); fxStop(0.06); fxRing(78, 50, '#f7c92b', 2, 70, 0.5, { w: 2 }); }],
+    [AL1c.lines[3].t + 1.2, () => petSay('Zzz...', 1.5)], [CF1 + 0.3, () => petSay('Eh? Un caffè?', 1.1)], [CF3 + 0.4, () => petSay('OOOOH!!!', 1.0)], [CF3 + 1.6, () => petSay('HO CAPITO TUTTO! ER PC! LA VPN!', 2.2)], [CF3 + 4.2, () => petSay('DAJE DAJE DAJE DAJE!', 2.0)], [AE1 + 0.9, () => petSay('Ma io... nun ho sonno...', 1.8)], [AE1 + 3.4, () => petSay('Zzz... caffè... zzz...', 2.0)],
+    [AE1 - 1.2, () => sfx('whoosh')], [AE1 + 0.05, () => { sfx('click'); }]], EXITEV(AE1 + 0.0, AE1 + 1.7))
+};
+AL1.cup = (A, T, v, pt) => {
+  const hx = v.x - 9, hy = vtopOf(A, v) + 43, px = pt.x - 18, py = FLOOR - 65 + (pt.dy || 0) + 30;
+  if (T < CF1) return { x: hx, y: hy, st: 0 }; if (T < CF1 + 0.8) { const u = easeIO((T - CF1) / 0.8); return { x: lerp(hx, px, u), y: lerp(hy, py, u) - Math.sin(u * Math.PI) * 16, st: 1 }; }
+  if (T < CF2) return { x: px, y: py, st: 2 }; if (T < CF3) { const u = (T - CF2) / (CF3 - CF2); return { x: px + 2, y: py - 3 + Math.round(Math.sin(u * 20) * 1), st: 3 }; } if (T < CF3 + 0.6) { const u = (T - CF3) / 0.6; return { x: px + 2 - u * 6, y: lerp(py - 3, FLOOR - 5, u * u), st: 4 }; }
+  return { x: px - 4, y: FLOOR - 5, st: 5 };
+};
+AL1.state = mkState({
+  open: 2.5, close: AE1 + 1.7, knocks: [0.8, 1.4], kamp: 1, cuts: [], segs: [{ k: 'hop', t0: 4.0, t1: 4.6, x1: 58 }, { k: 'walk', t0: 6.0, t1: 7.6, x0: 58, x1: 62 }, { k: 'in', t0: AE1 + 1.2, t1: AE1 + 1.7, x0: 62 }],
+  pose(p, T, A, seg, v) { const gz = p.m ? 1 : 0.4; p.aL = [0, 0, gz * (9 + 11 * Math.sin(T * 6.5))]; p.aR = [0, 0, -gz * (9 + 11 * Math.sin(T * 6.5 + 2.1))]; if (T >= 2.9 && T < 4.0 || (T >= AE1 - 1.2 && T < AE1 + 0.8)) { p.aR = [0, 0, -(62 + 18 * Math.sin(T * 11))]; p.hd = [0, 0, 4 * Math.sin(T * 3)]; } if (T >= CF1 && T < CF1 + 0.8) p.aL = [0, 0, 40]; },
+  pet(pt, T, A) {
+    const nod = AL1c.lines[3].t, ov = {}; let e = 'smile', dx = 0, dy = 0, k = 0, x = 86;
+    if (T >= nod - 0.2 && T < CF1) { e = 'refuse'; ov.zzz = true; dy = Math.round(Math.sin(T * 1.7) * 1.5); k = -0.05 + 0.04 * Math.sin(T * 1.7); }
+    else if (T >= CF1 && T < CF2) e = 'normal'; else if (T >= CF2 && T < CF3) e = 'eat';
+    else if (T >= CF3 && T < AE1 + 0.8) { e = (Math.floor(T * 7) & 1) ? 'happy' : 'eat'; ov.hyper = true; dx = Math.round(Math.sin(T * 63) * 2.5); dy = -Math.round(Math.abs(Math.sin(T * 11)) * 7); x = 90 + 8 * Math.sin(T * 5.2); k = 0.1 * Math.sin(T * 25); }
+    else if (T >= AE1 + 0.8 && T < AE1 + 2.6) { e = 'eat'; ov.hyper = (T < AE1 + 1.6); dx = Math.round(Math.sin(T * 30) * 1.2); x = 94; k = 0.04; }
+    else if (T >= AE1 + 2.6) { e = 'sleep'; ov.zzz = true; k = lerp(0, -0.3, easeOut(c01((T - AE1 - 2.6) / 0.8))); x = 94; }
+    if (T < 1.9) e = 'normal'; if (T >= 0.9 && T < nod) x = lerp(86, 92, easeIO(c01((T - 0.9) / 1.0)));
+    pset(pt, e); if (pt.walk < 0) { pt.x = (T >= 0.9) ? x : pt.x; pt.dx = dx; pt.dy = dy; pt.k = k; pt.ov = ov; }
+  }
+});
+AL1.over = (A, T, st, t) => {
+  const v = st.v; if (!v.show) return; const c = AL1.cup(A, T, v, st.pet), cx = Math.round(c.x), cy = Math.round(c.y); if (c.st >= 5) { cupDraw(cx, cy, 2, T); return; }
+  const cold = T > CF1 - 3 ? 1 : c01((T - 3.0) / (CF1 - 6.0)); cupDraw(cx, cy, c.st === 4 ? 2 : (cold > 0.7 ? 1 : 0), T, cold);
+};
+function cupDraw(x, y, ice, T, cold) {
+  rect(x - 3, y - 3, 7, 7, K); rect(x - 2, y - 2, 5, 5, ice === 2 ? '#c4d8e4' : ice ? '#8fdcf5' : '#f4f8fa'); rect(x - 2, y - 2, 5, 2, ice === 2 ? '#9ba7b0' : ice ? '#58b8f0' : '#6d4524'); rect(x + 4, y - 1, 2, 3, K); rect(x + 4, y, 1, 1, '#f4f8fa');
+  if (ice === 0) for (let i = 0; i < 3; i++) { const ph = (T * 0.9 + i / 3) % 1; if (ph > 0.75 && (Math.floor(ph * 30) & 1)) continue; rect(x - 2 + i * 2 + Math.round(Math.sin(T * 3 + i) * 1), y - 5 - Math.round(ph * 9), 1, 2, '#ffffff'); }
+  else if (ice === 1) { star(x - 4, y - 6, '#bff0ff', 1); if (Math.floor(T * 5) & 1) star(x + 4, y - 8, '#ffffff', 1); }
+}
+const AL2c = chain(3.4, ["BUONGIORNO! UNA FIRMINA VELOCE, PREGO.", "È PER IL MODULO DI PRESA IN CARICO,", "CHE VA FIRMATO QUI, E QUI, E QUI,", "E ANCHE QUI, GRAZIE. ANZI, UN ATTIMO,", "HO ANCHE IL MODULO PER IL MODULO.", "LO FIRMA PER FAVORE, ANCHE SE È UN BIS?",
+  "POI C'È IL MODULO DELLA CONSEGNA, CHE È", "UGUALE, MA COL LOGO DIVERSO, QUINDI", "VA FIRMATO IN BLU. HA UNA PENNA BLU?", "NO? NIENTE, LE PRESTO LA MIA, FIRMI PURE.", "ANCORA UNA, E POI ABBIAMO FINITO.", "ANZI, SONO QUARANTASETTE. MA SONO VELOCI!", "ECCO, FIRMI ANCHE QUESTA, E QUESTA, E", "QUESTA, CHE È L'ULTIMA, MA NON È L'ULTIMA.", "GRAZIE MILLE! ARRIVEDERCI! ANZI, UN ATTIMO..."], 42);
+const AE2 = AL2c.end, AT2 = f => 3.4 + f * (AE2 - 3.4);
+const AL2 = {
+  id: 2, who: 'ale', title: 'LE FIRME', lr: true, long: true, openT: 2.5, exitT: AE2, dur: AE2 + 6.4, greetT: 1.9, key: [AT2(0.3), AT2(0.3) + 1.8], echo: 'ANCORA UNA FIRMA?!', lines: AL2c.lines, stamps: [], punch: [], cuts: [],
+  ev: [[0.05, A => dashFx(A)]].concat(KN([0.8, 1.4], 'knockS'), OPENEV(2.5, false), [[3.4, () => { vsfx('ding'); fxStars(CX + 6, 40, 4, 18); }], [4.0, () => sfx('whoosh')], [4.6, () => landFx(58, false)]],
+    [[0.08, "Ce metto 'na firma, e via!"], [0.28, 'Ancora una firma?'], [0.5, "Ma quante so'?!"], [0.68, "Me fa male 'a mano..."], [0.84, 'NUN VEDO PIÙ ER FOGLIO!']].map(a => [AT2(a[0]), () => petSay(a[1], 1.7)]),
+    [[AE2 - 1.0, () => sfx('whoosh')], [AE2 + 0.1, () => { sfx('crash'); fxShake(6); fxStop(0.08); flash = 0.4; }], [AE2 + 2.6, () => petSay('Nun posso... più... firmà...', 2.0)]], EXITEV(AE2 + 0.0, AE2 + 1.7))
+};
+AL2.cnt = T => Math.min(47, Math.floor(c01((T - 4.8) / (AE2 - 4.8 - 1.2)) * 47));
+AL2.state = mkState({
+  open: 2.5, close: AE2 + 1.7, knocks: [0.8, 1.4], kamp: 1, cuts: [], segs: [{ k: 'hop', t0: 4.0, t1: 4.6, x1: 56 }, { k: 'walk', t0: 6.0, t1: 7.6, x0: 56, x1: 60 }, { k: 'in', t0: AE2 + 1.2, t1: AE2 + 1.7, x0: 60 }],
+  pose(p, T, A) { const gz = p.m ? 1 : 0.4; p.aL = [0, 0, gz * (9 + 11 * Math.sin(T * 6.5))]; p.aR = [0, 0, -gz * (9 + 11 * Math.sin(T * 6.5 + 2.1))]; if (T >= 2.9 && T < 4.0 || (T >= AE2 - 1.2 && T < AE2 + 0.8)) { p.aR = [0, 0, -(62 + 18 * Math.sin(T * 11))]; p.hd = [0, 0, 4 * Math.sin(T * 3)]; } },
+  pet(pt, T) {
+    const u = c01((T - 4.8) / (AE2 - 4.8)), ov = {}; let e = 'smile', dx = 0, k = 0, x = 90; if (T >= 4.8) { e = u < 0.3 ? 'smile' : u < 0.55 ? 'normal' : u < 0.8 ? 'sad' : 'refuse'; dx = Math.round(Math.sin(T * 40) * (0.5 + 1.8 * u)); k = -0.03 - 0.1 * u; ov.pen = true; }
+    if (T < 1.9) e = 'normal'; if (T >= 0.9) x = lerp(86, 92, easeIO(c01((T - 0.9) / 1.0))); if (T >= AE2 + 0.1) { e = 'sad'; ov.pen = false; k = -0.22; dx = 0; }
+    pset(pt, e); if (pt.walk < 0) { pt.x = (T >= 0.9) ? x : pt.x; pt.dx = dx; pt.k = k; pt.ov = ov; }
+  }
+});
+AL2.over = (A, T, st, t) => {
+  const v = st.v; if (!v.show) return; const pe = st.pet, vt = vtopOf(A, v), n = AL2.cnt(T), land = [pe.x - 12, FLOOR - 34], src = [v.x + 10, vt + 32], endAnim = T >= AE2 + 0.1;
+  // pila di fogli accanto al visitatore (si consuma man mano)
+  const hs0 = Math.max(4, 16 - Math.round(n * 0.15)); for (let i = 0; i < hs0; i += 2) { rect(v.x + 11, v.feet - 8 - i, 11, 2, K); rect(v.x + 12, v.feet - 8 - i, 9, 1, i % 4 ? '#f4f8fa' : '#dfe9ee'); } rect(v.x + 11, v.feet - 8 - hs0, 11, 1, K);
+  // fogli in volo
+  for (let j = Math.max(0, n - 4); j <= Math.min(46, n + 1); j++) { const tj = 4.8 + (j / 47) * (AE2 - 4.8 - 1.2), q = (T - tj) / 0.55; if (q < 0 || q >= 1) continue; const x = lerp(src[0], land[0], easeIO(q)), y = lerp(src[1], land[1], q) - Math.sin(q * Math.PI) * 12; rect(Math.round(x) - 1, Math.round(y) - 1, 9, 7, K); rect(Math.round(x), Math.round(y), 7, 5, '#ffffff'); rect(Math.round(x) + 1, Math.round(y) + 1, 4, 1, '#9ba7b0'); }
+  // pila davanti al pet
+  const ph = Math.min(46, Math.round(n * 0.98)), top = FLOOR - ph; if (ph > 2) {
+    for (let y = FLOOR - 2; y > top; y -= 2) { const r = Math.floor((FLOOR - y) / 2), off = Math.round((hz(r, 2) - 0.5) * 6) + (endAnim ? Math.round(Math.sin((T - AE2) * 6) * 3) : 0); rect(pe.x - 22 + off, y, 30, 2, K); rect(pe.x - 21 + off, y, 28, 1, r % 3 ? '#f4f8fa' : '#dfe9ee'); }
+    rect(pe.x - 22, top, 30, 1, K);
+  }
+  const cs = ['FIRME ' + n + ' DI 47']; plate(cs[0], 56, 79, '#14246a', '#fffbea', 1, '#f7c92b');
+  if (pe.ov && pe.ov.pen && !endAnim) { const px0 = Math.round(pe.x - 22), py0 = FLOOR - 40 + (pe.dy || 0); rect(px0 - 1, py0 - 5, 3, 8, K); rect(px0, py0 - 4, 1, 6, '#2b62c4'); if (Math.floor(T * 14) % 2) { rect(px0 - 3, py0 + 3, 1, 1, '#2b62c4'); rect(px0 + 3, py0 + 4, 1, 1, '#2b62c4'); } }
+};
+const AL3c = chain(3.4, ['ALLORA, È MOLTO SEMPLICE: BASTA SEGUIRE', 'LA GUIDA. SONO SOLO QUARANTASETTE PASSI.', 'PASSO UNO: CLICCHI SU AVVIO. FATTO?', 'PASSO DUE: ASPETTI CHE SI CARICHI, CHE', 'A VOLTE CI METTE UN PO. UN PO TANTO.', 'PASSO TRE: SI RICORDA LA PASSWORD? NO?', 'ALLORA PASSO TRE BIS: IL RECUPERO, CHE', 'SONO ALTRI NOVE PASSI, MA SONO FACILI.',
+  'PASSO QUATTRO... ASPETTI, HO SBAGLIATO', 'GUIDA, QUELLA ERA PER IL VECCHIO PC.', 'RICOMINCIAMO! PASSO UNO: CLICCHI SU AVVIO.', 'FATTO? BENISSIMO. ORA SIAMO A CINQUANTADUE', 'PASSI, PERCHÉ NEL FRATTEMPO HANNO AGGIUNTO', 'UN PASSO. MA È UN BONUS, SONO SOLO TRE.', 'PRONTO? PASSO UNO... ANZI, NO. ARRIVEDERCI!'], 42);
+const AE3 = AL3c.end, AT3 = f => 3.4 + f * (AE3 - 3.4);
+const AL3 = {
+  id: 3, who: 'ale', title: 'IL TUTORIAL', lr: true, long: true, openT: 2.5, exitT: AE3, dur: AE3 + 6.4, greetT: 1.9, key: [AT3(0.2), AT3(0.2) + 1.6], echo: 'PASSO UNO: CLICCHI SU AVVIO!', lines: AL3c.lines, stamps: [], punch: [],
+  cuts: [{ t0: AT3(0.3), t1: AT3(0.3) + 5.0, draw: cutTutorial(0) }, { t0: AT3(0.66), t1: AT3(0.66) + 4.4, draw: cutTutorial(1) }],
+  ev: [[0.05, A => dashFx(A)]].concat(KN([0.8, 1.4], 'knockS'), OPENEV(2.5, false), [[3.4, () => { vsfx('ding'); fxStars(CX + 6, 40, 4, 18); }], [4.0, () => sfx('whoosh')], [4.6, () => landFx(58, false)], [AT3(0.3), () => sfx('riser2')], [AT3(0.3) + 4.0, () => { sfx('no'); fxShake(2); }], [AT3(0.66), () => sfx('riser')], [AT3(0.66) + 2.4, () => { sfx('no'); fxShake(2); }], [AT3(0.66) + 3.0, () => sfx('tada')]],
+    [[0.1, 'Solo quarantasette passi...'], [0.5, 'Passo uno... passo uno...'], [0.78, 'Cinquantadue?!'], [0.9, 'Passo... nun... ce... la...']].map(a => [AT3(a[0]), () => petSay(a[1], 1.7)]),
+    [[AE3 - 1.0, () => sfx('whoosh')], [AE3 + 0.1, () => { sfx('crash'); fxShake(6); fxStop(0.08); flash = 0.4; }], [AE3 + 2.6, () => petSay('PASSO UNO... PASSO UNO...', 2.0)]], EXITEV(AE3 + 0.0, AE3 + 1.7))
+};
+AL3.state = mkState({
+  open: 2.5, close: AE3 + 1.7, knocks: [0.8, 1.4], kamp: 1, cuts: AL3.cuts, segs: [{ k: 'hop', t0: 4.0, t1: 4.6, x1: 58 }, { k: 'walk', t0: 6.0, t1: 7.6, x0: 58, x1: 62 }, { k: 'in', t0: AE3 + 1.2, t1: AE3 + 1.7, x0: 62 }],
+  pose(p, T, A) { const gz = p.m ? 1 : 0.4; p.aL = [0, 0, gz * (9 + 11 * Math.sin(T * 6.5))]; p.aR = [0, 0, -gz * (9 + 11 * Math.sin(T * 6.5 + 2.1))]; if (T >= 2.9 && T < 4.0 || (T >= AE3 - 1.2 && T < AE3 + 0.8)) { p.aR = [0, 0, -(62 + 18 * Math.sin(T * 11))]; p.hd = [0, 0, 4 * Math.sin(T * 3)]; } if (T >= 5 && T < AE3 - 1.5 && p.m) p.aR = [0, 0, -(35 + 8 * Math.sin(T * 5))]; },
+  pet(pt, T) {
+    const u = c01((T - 4.8) / (AE3 - 4.8)), ov = {}; let e = 'smile', dx = 0, k = 0, x = 92; if (T >= 4.8) { e = u < 0.3 ? 'smile' : u < 0.55 ? 'normal' : u < 0.75 ? 'sad' : 'eat'; dx = Math.round(Math.sin(T * 35) * (0.3 + 1.6 * u)); k = -0.03 - 0.09 * u; if (u > 0.7) ov.spiral = true; }
+    if (T < 1.9) e = 'normal'; if (T >= 0.9) x = lerp(86, 92, easeIO(c01((T - 0.9) / 1.0))); if (T >= AE3 + 0.1) { e = 'refuse'; ov.spiral = false; ov.dizzy = true; k = -0.2; dx = 0; }
+    pset(pt, e); if (pt.walk < 0) { pt.x = (T >= 0.9) ? x : pt.x; pt.dx = dx; pt.k = k; pt.ov = ov; }
+  }
+});
+const AL4c = chain(3.4, ['BUONGIORNO! HO PORTATO UNA TORTA!', 'È PER IL COMPLEANNO DEL TICKET, CHE OGGI', 'COMPIE UN ANNO: LO HO APERTO UN ANNO FA,', 'E ANCORA È APERTO. ALLORA, PRIMA DI SOFFIARE,', 'DUE PAROLE: IN QUESTO ANNO ABBIAMO', 'AGGIORNATO IL TICKET QUARANTA VOLTE,', 'CHIUSO TRE, RIAPERTO TRE, E ALLA FINE', 'È ANCORA QUI, FORTE E SANO. DEVO', 'RINGRAZIARE TANTE PERSONE: IL PRIMO', 'LIVELLO, IL SECONDO LIVELLO, IL TERZO,', 'IL FORNITORE, IL FORNITORE DEL FORNITORE,', 'E ANCHE LEI, CHE È QUI COL CAPPELLINO.', 'ASPETTI, LE CANDELINE SI STANNO SCIOGLIENDO?', 'NON IMPORTA! UN ULTIMO PENSIERO, POI SOFFIA.', 'CHE DICEVO? AH SÌ: AUGURI! ... AUGURI.'], 42);
+const AE4 = AL4c.end, AT4 = f => 3.4 + f * (AE4 - 3.4), CNDX = [12, 16, 20, 24, 28];
+const AL4 = {
+  id: 4, who: 'ale', title: 'LA TORTA', lr: true, long: true, openT: 2.5, exitT: AE4, dur: AE4 + 6.0, greetT: 1.9, key: [AT4(0.0), AT4(0.0) + 1.6], echo: 'HO PORTATO UNA TORTA!', lines: AL4c.lines, stamps: [], punch: [], cuts: [],
+  ev: [[0.05, A => dashFx(A)]].concat(KN([0.8, 1.4], 'knockS'), OPENEV(2.5, false), [[3.4, () => { vsfx('ding'); fxStars(CX + 6, 40, 4, 18); }], [4.0, () => sfx('whoosh')], [4.6, () => landFx(60, false)], [5.2, () => sfx('sparkle')]],
+    [[0.1, 'Una torta! Che bello!'], [0.4, 'Er ticket compie n anno...'], [0.62, 'Le candeline se sciolgono...'], [0.86, "Me sa che nun c'è più tempo..."]].map(a => [AT4(a[0]), () => petSay(a[1], 1.7)]),
+    [[AE4 + 0.2, () => { sfx('pop'); fxStars(18, 56, 8, 30); }], [AE4 + 1.0, () => { sfx('lose'); fxShake(2); }], [AE4 + 2.4, () => petSay("È diventata 'na torta de cera, aò...", 2.2)], [AE4 - 1.0, () => sfx('whoosh')]], EXITEV(AE4 + 0.0, AE4 + 1.7))
+};
+AL4.state = mkState({
+  open: 2.5, close: AE4 + 1.7, knocks: [0.8, 1.4], kamp: 1, cuts: [], segs: [{ k: 'hop', t0: 4.0, t1: 4.6, x1: 60 }, { k: 'in', t0: AE4 + 1.2, t1: AE4 + 1.7, x0: 60 }],
+  pose(p, T, A) { const gz = p.m ? 1 : 0.4; p.aL = [0, 0, gz * (9 + 11 * Math.sin(T * 6.5))]; p.aR = [0, 0, -gz * (9 + 11 * Math.sin(T * 6.5 + 2.1))]; if (T >= 2.9 && T < 4.0 || (T >= AE4 - 1.2 && T < AE4 + 0.8)) { p.aR = [0, 0, -(62 + 18 * Math.sin(T * 11))]; p.hd = [0, 0, 4 * Math.sin(T * 3)]; } },
+  pet(pt, T) {
+    const u = c01((T - 3.4) / (AE4 - 3.4)), ov = { hat: true, hatD: c01((u - 0.3) / 0.6) }; let e = 'smile', dx = 0, k = 0, x = 97; if (u > 0.35) e = 'normal'; if (u > 0.6) e = 'sad'; if (T >= AE4 + 0.2) { e = 'refuse'; k = -0.15; }
+    if (T < 1.9) e = 'normal'; if (T >= 0.9) x = lerp(86, 97, easeIO(c01((T - 0.9) / 1.0))); if (T < 3.4) ov.hat = false; pset(pt, e); if (pt.walk < 0) { pt.x = (T >= 0.9) ? x : pt.x; pt.dx = dx; pt.k = k; pt.ov = ov; }
+  }
+});
+AL4.over = (A, T, st, t) => {
+  const v = st.v; if (T < 3.0) return; const u = c01((T - 4.6) / (AE4 - 0.8 - 4.6));
+  // tavolino + torta (a sinistra, davanti al rack)
+  const tb = FLOOR - 16, bx = 6;
+  rect(bx, tb, 26, 3, K); rect(bx + 1, tb, 24, 2, '#c89a5e'); rect(bx + 4, tb + 3, 3, 13, K); rect(bx + 5, tb + 3, 1, 13, '#8a5a34'); rect(bx + 19, tb + 3, 3, 13, K); rect(bx + 20, tb + 3, 1, 13, '#8a5a34');
+  rect(bx + 3, tb - 9, 20, 10, K); rect(bx + 4, tb - 8, 18, 8, '#f6c8d8'); rect(bx + 4, tb - 3, 18, 3, '#fff6d8'); rect(bx + 4, tb - 8, 18, 2, '#ffffff'); for (let i = 0; i < 5; i++) rect(bx + 5 + i * 4, tb - 4, 2, 2, '#d8383a');
+  for (let i = 0; i < 5; i++) {
+    const h = Math.max(0, Math.round(10 * (1 - c01(u * 1.05 - i * 0.03)))), cx = CNDX[i] - 1, col = ['#d8383a', '#f7c92b', '#58b8f0', '#5bd66b', '#f59ab5'][i];
+    if (h > 0) { rect(cx, tb - 9 - h, 3, h, K); rect(cx + 1, tb - 9 - h, 1, h, col); if (h > 2) { const fl = (Math.floor(T * 9 + i) & 1); rect(cx + 1, tb - 11 - h - fl, 1, 2 + fl, '#f7c92b'); rect(cx + 1, tb - 10 - h, 1, 1, '#ffffff'); } else if (Math.floor(T * 3 + i) % 3 === 0) rect(cx + 1, tb - 12 - h, 1, 3, '#c4d8e4'); }
+    if (u > 0.2) { const dr = c01((u - 0.2) / 0.7); rect(cx - 1, tb - 9 - Math.round(dr * 2), 5, Math.round(dr * 2) + 1, '#f4f8fa'); if (dr > 0.3) rect(cx + 1, tb - 9 + Math.round((T * 4 + i * 2) % 3), 1, 2, col); }
+  }
+  if (u > 0.85) { rect(bx + 4, tb - 9, 18, 2, '#f4f8fa'); for (let i = 0; i < 5; i++) rect(CNDX[i] - 1, tb - 9, 3, 1, ['#d8383a', '#f7c92b', '#58b8f0', '#5bd66b', '#f59ab5'][i]); }
+  // cappellino di Alessandro
+  if (v.show && T >= 3.4 && T < AE4 + 0.9) { const hx = Math.round(v.x - 1), hy = Math.round(vtopOf(A, v)) - 1; for (let r = 0; r < 8; r++) { const w = Math.max(1, 8 - r); rect(hx - w / 2 - 1, hy + r - 5, w + 2, 1, K); rect(hx - w / 2, hy + r - 5, w, 1, r % 3 ? '#f7c92b' : '#d8383a'); } circle(hx, hy - 6, 1, '#ffffff'); }
+};
+/* ============================ REGISTRO + MEMORIA ============================ */
+Object.assign(VSC.ric, { id: 0, who: 'ric', title: 'INACCETTABILE', greetT: 1.95, key: [6.9, 8.2], echo: 'INACCETTABILE!!!', puffs: [6.2, 13.6], anger: [6.3, 13.6], shout: [6.9, 13.5] });
+Object.assign(VSC.dav, { id: 0, who: 'dav', title: 'NEWS IMPATTO COMUNICAZIONE', greetT: 1.45, key: [5.85, 7.45], echo: 'COMUNICAZIONE?????', qmark: [4.3, 13.0] });
+Object.assign(VSC.ale, { id: 0, who: 'ale', title: 'I TICKET', lr: true, long: true, greetT: 1.9, key: [AT(0.3), AT(0.34)], echo: 'E POI! E POI! E POI!' });
+const VSCN = { ric: [VSC.ric, RC1, RC2, RC3, RC4], dav: [VSC.dav, DV1, DV2, DV3, DV4], ale: [VSC.ale, AL1, AL2, AL3, AL4] };
+const ACCN = { ric: 'helmet', dav: 'oksign', ale: 'plugs' };
+const REACT = {
+  ric: { greet: [["Avanti, è aperto, aò!", "Chi è? Avanti, è aperto!"], ['Ahia... quattro botte... è Riccardo.', "Aò, 'sto bussà... è lui."], ['Shhh... nun ce sto, aò!', 'Metto er casco, nun se sa mai.'], ['Entra, Riccà. Tanto lo so già.', 'Avanti, sfogate pure, aò...']],
+    seen: ["Ancora 'sta scena... già vista.", "Eccolo che comincia, come l'altra vorta."], seen2: ["Terza vorta! Nun cambia mai!", "Già vista, già vista, aò..."], all: ["Le so' tutte a memoria, aò!", "Cinque scene, e so' tutte inaccettabili!"] },
+  dav: { greet: [['Avanti, avanti, è aperto!', 'Chi è? Entra, entra!'], ['Ahia... tre botte svelte... Davide.', "Questo è er bussà de Davide, aò..."], ['Shhh... ho er foglio OK, nun me chiede gnente!', 'Fingemo de nun esse in ufficio...'], ['Entra, Davide. Comunico, comunico...', 'Avanti: news, impatto e... er resto.']],
+    seen: ["'Sta domanda l'ho già sentita...", "News? Impatto? Già vissuta."], seen2: ['Le risposte le so già! O quasi...', "Nun c'è gnente de novo, aò..."], all: ["So' preparato su tutte le comunicazioni!", 'Cinque scene viste... e nessuna comunicazione.'] },
+  ale: { greet: [['Avanti, avanti, è aperto!', 'Chi è? Avanti, avanti!'], ['Due bussate educate... è Alessandro.', 'Eh... è Alessandro... ahia...'], ['Ho messo i tappi, aò... Shhh...', 'Fai finta che nun ce sto, eh!'], ["Entra, Alessandro. Mo' me siedo.", "Avanti. Tanto me serve 'na pausa..."]],
+    seen: ["Già sentita... nun la finisce mai.", "L'ho già vista, 'sta storia..."], seen2: ["Pure 'sta vorta dura 'n'eternità...", 'Me la ricordo... me la ricordo...'], all: ["Ho visto tutte e cinque le storie!", "Le so a memoria. Pure i ticket."] }
+};
+function visRec(who) { S.vis = S.vis || {}; const r = S.vis[who] || (S.vis[who] = { n: 0, seen: [0, 0, 0, 0, 0], last: -1 }); while (r.seen.length < 5) r.seen.push(0); return r; }
+function pickScene(who) {
+  const r = visRec(who), N = VSCN[who].length; if (r.n === 0) return 0;
+  const w = [], tot = []; let s = 0; for (let i = 0; i < N; i++) { let q = 1 / Math.pow(1 + (r.seen[i] || 0), 2); if (i === r.last) q *= 0.08; w.push(q); s += q; }
+  let x = Math.random() * s; for (let i = 0; i < N; i++) { x -= w[i]; if (x <= 0) return i; } return 0;
+}
+function memEvents(sc, who, m) {
+  const R = REACT[who], ev = []; ev.push([sc.greetT || 1.9, () => petSay(pick(R.greet[m.tier]), 1.6)]);
+  if (m.seen > 0 && sc.key) ev.push([sc.key[0] - 0.05, () => petSay(sc.echo || '...', Math.max(1.3, sc.key[1] - sc.key[0] + 0.5))]);
+  const aft = m.all ? R.all : m.seen > 0 ? (m.seen > 1 ? R.seen2 : R.seen) : null; if (aft) ev.push([sc.dur - 0.5, () => petSay(pick(aft), 2.0)]);
+  return ev;
+}
+function visitState(A, T) {
+  const sc = A.sc, st = sc.state(T, A), m = A.mem; if (!m) return st;
+  const pt = st.pet, op = sc.openT, ov = Object.assign({}, pt.ov || {}); if (m.tier >= 2) ov[ACCN[A.who]] = true;
+  if (!(pt.walk >= 0)) {
+    if (m.tier === 1 && T < op + 0.6) pt.expr = 'sad';
+    if (m.tier === 2) { const h = 1 - easeIO(c01((T - op - 0.2) / 0.9)); if (h > 0) { pt.x = Math.min(98, lerp(pt.x, 99, h)); pt.k = lerp(pt.k || 0, -0.22, h); if (h > 0.25) pt.expr = 'sad'; if (T < op) ov.shh = true; } }
+    if (m.tier === 3 && T < op + 1.4) pt.expr = 'refuse';
+    if (m.seen > 0 && sc.key && T >= sc.key[0] && T < sc.key[1]) pt.expr = (Math.floor(T * 9) & 1) ? 'talk' : 'normal';
+  }
+  pt.ov = ov; return st;
+}
+function memOver(A, T, st, t) { const ov = st.pet.ov; if (ov && ov.shh && (Math.floor(T * 4) & 1)) plate('SHH!', Math.round(st.pet.x), FLOOR - 70, '#ffffff', '#6a1a8a'); }
+function startVisit(who, idx) {
+  if (!who || !VSCN[who]) { const pool = VKEYS.filter(k => k !== VD.last); who = pick(pool.length ? pool : VKEYS); }
+  VD.last = who; const list = VSCN[who], r = visRec(who); if (idx === undefined || idx === null || idx < 0 || idx >= list.length) idx = pickScene(who);
+  const sc = list[idx], mem = { n: r.n, tier: r.n === 0 ? 0 : r.n < 3 ? 1 : r.n < 6 ? 2 : 3, seen: r.seen[idx] || 0, all: r.seen.every(x => x > 0), idx };
+  r.n++; r.seen[idx] = (r.seen[idx] || 0) + 1; r.last = idx;
+  const ev = sc.ev.concat(memEvents(sc, who, mem)).sort((a, b) => a[0] - b[0]);
+  fxClear(); bub = null; sel = -1; PET.moving = false; PET.v = 0; PET.settle = false; PET.wcGo = false; PET.pend = 0; PET.jy = 0; PET.jv = 0; SQ.x = 0; SQ.v = 0;
+  setAnim('visit', sc.dur, () => { PET.x = 86; PET.dir = -1; PET.wait = 1.2; PET.moving = false; bub = null; chatT = 14; VD.timer = rnd(240, 480); save(); }, { who, sc, mem, px0: PET.x, qs: [], ws: [], ps: [], ev, vb: 0, wt: 0, pt: 0, tt: 0, st: 0 });
+  sfx('click'); save();
+}
+
 /* ---------- particelle: "?" di Davide, parole di Alessandro, sudore del pet ---------- */
 function qBurst(A, n) { const v = A.vpos || { x: 57, top: 30 }; for (let i = 0; i < n; i++) { const a = -Math.PI / 2 + rnd(-1.2, 1.2), sp = rnd(30, 70); A.qs.push({ x: v.x + rnd(-6, 6), y: v.top + 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 70, life: rnd(0.8, 1.4), age: 0, sc: pick([1, 1, 2, 2, 3]), col: pick(['#f7c92b', '#ffffff', '#7fcdf0']) }); } }
-function startVisit(who) {
-  if (!who || !VSC[who]) { const pool = VKEYS.filter(k => k !== VD.last); who = pick(pool.length ? pool : VKEYS); }
-  VD.last = who; const sc = VSC[who];
-  fxClear(); bub = null; sel = -1; PET.moving = false; PET.v = 0; PET.settle = false; PET.wcGo = false; PET.pend = 0; PET.jy = 0; PET.jv = 0; SQ.x = 0; SQ.v = 0;
-  setAnim('visit', sc.dur, () => { PET.x = 86; PET.dir = -1; PET.wait = 1.2; PET.moving = false; bub = null; chatT = 14; VD.timer = rnd(240, 480); save(); }, { who, sc, px0: PET.x, qs: [], ws: [], ev: sc.ev, vb: 0, wt: 0, st: 0 });
-  sfx('click');
-}
 function visitSkip() {
   const a = anim; if (!a || a.type !== 'visit' || a.t < a.sc.openT + 0.6 || a.t >= a.sc.exitT) return;
-  a.t = a.sc.exitT; bub = null; a.qs.length = 0; a.ws.length = 0; while (a.fi < a.ev.length && a.ev[a.fi][0] < a.sc.exitT) a.fi++; sfx('click');
+  a.t = a.sc.exitT; bub = null; a.qs.length = 0; a.ws.length = 0; if (a.ps) a.ps.length = 0; while (a.fi < a.ev.length && a.ev[a.fi][0] < a.sc.exitT) a.fi++; sfx('click');
 }
 function visitTick(dt) {
   const A = anim; if (!A || A.type !== 'visit') return;
-  const T = A.t, st = A.sc.state(T, A), v = st.v;
+  const T = A.t, sc = A.sc, st = visitState(A, T), v = st.v;
   if (v && v.show) A.vpos = { x: v.x, top: v.feet - vpGet(A.who).h, feet: v.feet };
   const ln = vLine(A, T);
   if (ln) { if (A.vlast !== ln.l) { A.vlast = ln.l; A.vb = 0; } while (A.vb < ln.shown) { const ch = ln.l.txt[A.vb]; if (A.vb % 2 === 0) voice(A.who, ch); A.vb++; } } else A.vlast = null;
   for (const q of A.qs) { q.age += dt; q.vy += q.g * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.99; } A.qs = A.qs.filter(q => q.age < q.life);
   for (const w of A.ws) { w.age += dt; w.x += w.vx * dt; w.y += Math.sin(w.age * 7 + w.ph) * 8 * dt + w.vy * dt; } A.ws = A.ws.filter(w => { if (w.x + tw(w.txt) >= PET.x - 17) { fxBurst(w.x, w.y, 4, { v0: 10, v1: 34, shape: 'star', cols: ['#ffffff', '#f7c92b'], l0: 0.3, l1: 0.6 }); A.hit = T; return false; } return w.age < w.life; });
-  if (A.who === 'ale' && ln && A.vpos && !ln.l.stop) { A.wt += dt; if (A.wt > 0.17) { A.wt = 0; A.ws.push({ txt: pick(['E POI', 'QUINDI', 'DICEVO', 'ANZI', 'COMUNQUE', 'TICKET', 'PERÒ', 'SCUSI', 'CIOÈ', 'ALLORA', 'DUNQUE']), x: A.vpos.x + 12, y: A.vpos.top + 14 + rnd(-4, 6), vx: rnd(28, 48), vy: rnd(-3, 3), ph: rnd(0, 6), age: 0, life: 3 }); } }
-  if (A.who === 'ric' && T >= 6.2 && T < 13.6 && A.vpos && Math.random() < dt * 9) fxAdd({ x: A.vpos.x + rnd(-6, 6), y: A.vpos.top + 1, vx: rnd(-5, 5), vy: -rnd(12, 24), g: -6, drag: 0.5, life: rnd(0.5, 0.9), c: '#f4f8fa', shape: 'puff', s: 1.6 });
-  if (A.who === 'ale' && st.fear > 0.15 && Math.random() < dt * (1 + st.fear * 6)) { const px = st.pet.x + rnd(-9, 9); fxAdd({ x: px, y: FLOOR - 52 + rnd(-2, 4), vx: (px > st.pet.x ? 1 : -1) * rnd(4, 12), vy: -rnd(8, 18), g: 120, life: 0.7, c: '#58b8f0', shape: 'drop', fade: false }); }
-  if (A.who === 'dav' && T >= 4.3 && T < 13 && Math.random() < dt * 2.2) fxAdd({ x: st.pet.x + rnd(-4, 8), y: FLOOR - 62, vx: rnd(-4, 4), vy: -rnd(8, 16), g: 0, life: 0.9, c: '#f7c92b', shape: 'plus' });
+  if (A.who === 'ale' && sc.id === 0) {
+    const u = AU(T), stA = st;
+    if (ln && A.vpos && T < AE) { A.wt += dt; if (A.wt > lerp(0.2, 0.055, u)) { A.wt = 0; if (A.ws.length < 40) A.ws.push({ txt: pick(['E POI', 'QUINDI', 'DICEVO', 'ANZI', 'COMUNQUE', 'TICKET', 'PERÒ', 'SCUSI', 'CIOÈ', 'ALLORA', 'DUNQUE', 'VPN', 'SLA', 'RIAVVIO', 'PASSWORD', 'LICENZE', 'STAMPANTE', 'ASPETTI', 'PRECISO', 'ESCALATION', 'IN CARICO', 'NOTA', 'A METÀ', '48213', '48214']), x: A.vpos.x + 12, y: A.vpos.top + 14 + rnd(-6, 8), vx: rnd(28, 52), vy: rnd(-4, 4), ph: rnd(0, 6), age: 0, life: 3 }); } }
+    const pe = stA.pet, ey = FLOOR - 65 + 20 + (pe.dy || 0);
+    const tr = (u > 0.3 && T < AE + 0.7) ? lerp(2, u > 0.6 ? 20 : 9, c01((u - 0.3) / 0.5)) : 0;
+    if (tr > 0 && Math.random() < dt * tr) { const ex = pe.x - 20 + (Math.random() < 0.5 ? 14 : 23) + (pe.dx || 0); fxAdd({ x: ex, y: ey, vx: (ex > pe.x - 20 + 18 ? 1 : -1) * rnd(3, 16), vy: u > 0.6 ? -rnd(10, 42) : -rnd(0, 8), g: 150, life: 0.9, c: '#58b8f0', shape: 'drop', fade: false }); }
+    if (u > 0.05 && T < AE && Math.random() < dt * (1 + stA.fear * 7)) { const px = pe.x + rnd(-9, 9); fxAdd({ x: px, y: FLOOR - 62 + rnd(-2, 4), vx: (px > pe.x ? 1 : -1) * rnd(4, 12), vy: -rnd(8, 18), g: 120, life: 0.7, c: '#58b8f0', shape: 'drop', fade: false }); }
+    if (u > 0.58 && T < AE + 0.4) { A.pt += dt; if (A.pt > lerp(0.7, 0.18, c01((u - 0.58) / 0.42))) { A.pt = 0; if (A.ps.length < 14) A.ps.push({ txt: pick(['AAH!', 'NO!', 'BASTA!', 'AIUTO!', 'PIETÀ!', 'MAMMA!', 'TICKET!', 'BLA BLA', '???', 'NOOO!', 'ZITTO!']), x: pe.x - 16, y: FLOOR - 40 + rnd(-10, 8), vx: -rnd(26, 52), vy: rnd(-8, 4), age: 0, life: 1.6, col: pick(['#ff4060', '#ffffff', '#f7c92b']) }); } }
+    for (const q of A.ps) { q.age += dt; q.x += q.vx * dt; q.y += q.vy * dt; } A.ps = A.ps.filter(q => q.age < q.life && q.x > (A.vpos ? A.vpos.x + 12 : 70));
+    if (stA.mad > 0.05 && T < AE && Math.random() < dt * (3 + 6 * stA.mad)) fxShake(0.6 + 2.4 * stA.mad);
+    if (T >= AE && T < AE + 4.6 && Math.random() < dt * 5) fxAdd({ x: pe.x + rnd(-14, 6), y: FLOOR - 38 + rnd(-4, 4), vx: rnd(-3, 3), vy: -rnd(6, 14), g: 0, life: 0.8, c: '#f7c92b', shape: 'plus' });
+  }
+  const pe2 = st.pet, ov2 = pe2.ov || {};
+  if (sc.puffs && T >= sc.puffs[0] && T < sc.puffs[1] && A.vpos && Math.random() < dt * 9) fxAdd({ x: A.vpos.x + rnd(-6, 6), y: A.vpos.top + 1, vx: rnd(-5, 5), vy: -rnd(12, 24), g: -6, drag: 0.5, life: rnd(0.5, 0.9), c: '#f4f8fa', shape: 'puff', s: 1.6 });
+  if (sc.qmark && T >= sc.qmark[0] && T < sc.qmark[1] && Math.random() < dt * 2.2) fxAdd({ x: pe2.x + rnd(-4, 8), y: FLOOR - 62, vx: rnd(-4, 4), vy: -rnd(8, 16), g: 0, life: 0.9, c: '#f7c92b', shape: 'plus' });
+  if (ov2.hyper && Math.random() < dt * 22) fxAdd({ x: pe2.x + rnd(-14, 12), y: FLOOR - rnd(8, 60), vx: rnd(-40, 40), vy: rnd(-20, 6), life: 0.35, c: pick(['#ffffff', '#f7c92b', '#7fdcff']), shape: 'spark', c2: '#ffffff', fade: false });
+  if (A.who === 'ale' && sc.id > 0 && v.show && ln && ln.typing && sc.cuts && !st.cut && Math.random() < dt * 1.5) fxAdd({ x: A.vpos.x + 9, y: A.vpos.top + 6, vx: rnd(6, 16), vy: -rnd(4, 12), g: 0, life: 0.7, c: '#ffffff', shape: 'plus' });
 }
 /* ---------- disegno della scena "visita" ---------- */
+function drawSpiral(cx, cy, t) {
+  rect(cx - 3, cy - 2, 7, 5, K); rect(cx - 2, cy - 3, 5, 7, K); rect(cx - 2, cy - 2, 5, 5, '#ffffff');
+  for (let i = 0; i < 10; i++) { const r = 0.4 + i * 0.22, a = t * 9 + i * 0.75; rect(cx + Math.round(Math.cos(a) * r), cy + Math.round(Math.sin(a) * r), 1, 1, K); }
+}
+function drawHand(x, y, w, h) { rect(x, y, w, h, K); rect(x + 1, y + 1, w - 2, h - 2, '#f0c09c'); rect(x + w - 3, y + 1, 2, h - 2, '#c9926f'); rect(x + 1, y + 2, w - 3, 1, '#c9926f'); }
+function drawPetOv(p, sp, px, py, t) {
+  const o = p.ov; if (!o) return;
+  if (o.tint && (Math.floor(t * 12) % 4 === 0)) blitSil(sp, px, py, '#ff4060');
+  if (o.spiral) { drawSpiral(px + 14, py + 18, t); drawSpiral(px + 23, py + 18, t + 1.3); }
+  if (o.ears) { const j = Math.round(Math.sin(t * 40)); drawHand(px + 0, py + 15 + j, 7, 9); drawHand(px + 27, py + 15 - j, 7, 9); }
+  if (o.hair) {
+    const j = Math.round(Math.sin(t * 19) * 2), j2 = Math.round(Math.sin(t * 19 + 1.5) * 2);
+    for (const [hx, jj] of [[px + 3, j], [px + 26, j2]]) { for (let i = 0; i < 4; i++) rect(hx + 1 + (i & 1) * 2, py + 7 - 4 + jj + i, 1, 1, K); drawHand(hx, py + 9 + jj, 6, 7); }
+  }
+  if (o.dizzy) for (let i = 0; i < 4; i++) { const a = t * 5 + i * 1.57; star(Math.round(p.x - 3 + Math.cos(a) * 16), Math.round(py + 4 + Math.sin(a) * 4), i & 1 ? '#f7c92b' : '#ffffff', 1); }
+  if (o.helmet) { const hx = px + 8; rect(hx, py + 1, 18, 5, K); rect(hx + 1, py + 2, 16, 3, '#f7c92b'); rect(hx + 1, py + 2, 16, 1, '#ffe27a'); rect(hx - 1, py + 5, 20, 2, K); rect(hx, py + 5, 18, 1, '#c99a14'); rect(hx + 7, py + 1, 4, 2, '#d8383a'); }
+  if (o.plugs) for (const ex of [px + 7, px + 29]) { rect(ex - 1, py + 18, 4, 4, K); rect(ex, py + 19, 2, 2, '#ff8a3a'); rect(ex, py + 19, 1, 1, '#ffd0a0'); }
+  if (o.oksign) { const sx = px - 8, sy = py + 33; rect(sx - 1, sy - 1, 14, 16, K); rect(sx, sy, 12, 14, '#ffffff'); rect(sx, sy, 12, 3, '#2e9e49'); text('OK', sx + 6, sy + 5, '#2e9e49', 'c'); rect(sx + 2, sy + 10, 8, 1, '#2e9e49'); }
+  if (o.hat) {
+    const cx = px + 16, by = py + 4, D = o.hatD || 0, tx = cx + Math.round(D * 9), ty = by - 12 + Math.round(D * 6);
+    for (let r = 0; r <= 11; r++) { const u = r / 11, x = Math.round(lerp(tx, cx, u)), y = Math.round(lerp(ty, by, u)), hw = 1 + Math.round(u * 5); rect(x - hw - 1, y, hw * 2 + 3, 1, K); rect(x - hw, y, hw * 2 + 1, 1, (r % 4 < 2) ? '#d8383a' : '#f7c92b'); }
+    rect(cx - 7, by + 1, 15, 1, K); circle(tx, ty - 1, 2, K); circle(tx, ty - 1, 1, '#ffffff');
+  }
+  if (o.zzz) for (let i = 0; i < 3; i++) { const q = (t * 0.5 + i / 3) % 1; if (q > 0.8 && (Math.floor(q * 30) & 1)) continue; textO('Z', Math.round(px + 26 + q * 9 + i * 2), Math.round(py + 8 - q * 16), '#ffffff', 'c', q < 0.4 ? 1 : 2, '#14246a'); }
+  if (o.hyper) for (let i = 0; i < 7; i++) { const q = (t * 9 + i * 0.37) % 1, y = py + 6 + i * 8; rect(Math.round(px + 34 + q * 10), y, 6, 1, '#ffffff'); rect(Math.round(px - 4 - q * 10), y + 3, 6, 1, '#f7c92b'); }
+}
+function drawBubTail(x, y, w, h, ax) { const tx = clamp(Math.round(ax), x + 4, x + w - 5); rect(tx - 2, y + h, 5, 1, '#fff'); rect(tx - 3, y + h, 1, 1, K); rect(tx + 3, y + h, 1, 1, K); rect(tx - 1, y + h + 1, 3, 1, '#fff'); rect(tx - 2, y + h + 1, 1, 1, K); rect(tx + 2, y + h + 1, 1, 1, K); rect(tx - 1, y + h + 2, 3, 1, K); rect(tx, y + h + 1, 1, 1, '#fff'); }
+function drawVBubbleL(txt, shown, ax, who) {
+  if (shown <= 0) return null; const lines = wrapText(txt, 12), maxc = Math.max(...lines.map(l => l.length)), w = maxc * 4 - 1 + 6, h = lines.length * 7 + 3, col = VCOL[who], x = 2, y = BAR + 2;
+  rect(x, y - 1, w, h + 2, K); rect(x - 1, y, w + 2, h, K); rect(x, y, w, h, '#fff'); rect(x + 1, y + h - 1, w - 2, 1, '#dfe9ee'); rect(x, y, w, 1, col[0]);
+  drawBubTail(x, y, w, h, ax);
+  let left = shown; lines.forEach((l, i) => { text(l.slice(0, Math.max(0, left)), x + 3, y + 3 + i * 7, col[2]); left -= l.length + 1; });
+  return { w, h };
+}
+function drawBubbleR(lb) {
+  const b = bub; if (!b || nowMs() > b.until) return;
+  const lines = wrapText(b.text, 12), maxc = Math.max(...lines.map(l => l.length)), ax = bubAnchor !== null ? bubAnchor : PET.x, w = maxc * 4 - 1 + 6, h = lines.length * 7 + 3, x = W - 2 - w; let y = BAR + 2;
+  if (lb && x < 2 + lb.w + 4) y += lb.h + 4;
+  rect(x, y - 1, w, h + 2, K); rect(x - 1, y, w + 2, h, K); rect(x, y, w, h, '#fff'); rect(x + 1, y + h - 1, w - 2, 1, '#dfe9ee');
+  drawBubTail(x, y, w, h, ax);
+  let left = b.shown; lines.forEach((l, i) => { text(l.slice(0, Math.max(0, left)), x + 3, y + 2 + i * 7, K); left -= l.length + 1; });
+}
 function drawPetV(p, t) {
   const stg = S.stage, WK = WALK[stg]; let sp = getWalkSprite(stg, p.expr, p.walk >= 0 ? p.walk : 2, S.sick, p.dir || -1);
   const px = Math.round(p.x - WK.anc + p.dx), py = Math.round(FLOOR - sp.h + p.dy);
   ctx.globalAlpha = 0.28; rect(Math.round(p.x - 9), FLOOR, 18, 2, '#000'); ctx.globalAlpha = 1;
   blitSK(sp, px, py, p.k || 0);
+  if (p.ov) drawPetOv(p, sp, px, py, t);
 }
 function drawVisit(A, t) {
-  const T = A.t, sc = A.sc, st = sc.state(T, A), D = DOOR, v = st.v;
+  const T = A.t, sc = A.sc, st = visitState(A, T), D = DOOR, v = st.v;
   VD.skip = true; drawScene(t); VD.skip = false;
+  if (sc.under) sc.under(A, T, st, t);
   drawSpill(st.o); drawDoorBack(st.o, T);
   const drawV = () => {
     const o = v.pose, k = A.who;
-    if (v.show && k === 'ric' && !v.clip && T >= 6.9 && T < 13.5) { const ln0 = vLine(A, T); if (ln0 && ln0.typing) { const cx0 = v.x, cy0 = v.feet - 44, ph0 = Math.floor(T * 14); for (let i = 0; i < 14; i++) { const an = i * 0.449 + ph0 * 0.37, r0 = 24 + (i % 3) * 3, r1 = r0 + 6 + ((i + ph0) % 4) * 3; line1(cx0 + Math.cos(an) * r0, cy0 + Math.sin(an) * r0 * 1.1, cx0 + Math.cos(an) * r1, cy0 + Math.sin(an) * r1 * 1.1, i & 1 ? '#ffffff' : '#ff6a7a'); } } }
+    if (v.show && sc.shout && !v.clip && T >= sc.shout[0] && T < sc.shout[1]) { const ln0 = vLine(A, T); if (ln0 && ln0.typing) { const cx0 = v.x, cy0 = v.feet - 44, ph0 = Math.floor(T * 14); for (let i = 0; i < 14; i++) { const an = i * 0.449 + ph0 * 0.37, r0 = 24 + (i % 3) * 3, r1 = r0 + 6 + ((i + ph0) % 4) * 3; line1(cx0 + Math.cos(an) * r0, cy0 + Math.sin(an) * r0 * 1.1, cx0 + Math.cos(an) * r1, cy0 + Math.sin(an) * r1 * 1.1, i & 1 ? '#ffffff' : '#ff6a7a'); } } }
     if (v.show) { ctx.globalAlpha = 0.3; rect(Math.round(v.x - 10), v.feet, 20, 2, '#000'); ctx.globalAlpha = 1; drawVisitor(k, o, v.x, v.feet, { sq: v.sq, sil: v.sil, glow: v.glow }); }
   };
   if (v.show && v.clip) {
@@ -3540,29 +4135,36 @@ function drawVisit(A, t) {
   drawDoorLeaf(st.o, st.sh);
   if (v.show && !v.clip) { if (v.x < st.pet.x) { drawV(); drawPetV(st.pet, t); } else { drawPetV(st.pet, t); drawV(); } } else drawPetV(st.pet, t);
   PET.x = st.pet.x; PET.dir = st.pet.dir; bubAnchor = st.pet.x;
-  if (v.show && A.who === 'ric' && T >= 6.3 && T < 13.6) drawAnger(Math.round(v.x + 12), Math.round(v.feet - vpGet('ric').h + 6), T);
-  if (A.who === 'dav') { const q = T >= 4.3 && T < 13.0; if (q && (Math.floor(T * 3) & 1)) plate('?', Math.round(st.pet.x), FLOOR - 70, '#ffffff', '#14246a'); }
-  if (A.who === 'ale' && st.fear > 0.85 && T < 20.5) for (let i = 0; i < 3; i++) { const a = T * 6 + i * 2.09; star(Math.round(st.pet.x + Math.cos(a) * 11), Math.round(FLOOR - 62 + Math.sin(a) * 3), i & 1 ? '#f7c92b' : '#ffffff', 1); }
+  if (sc.over) sc.over(A, T, st, t);
+  memOver(A, T, st, t);
+  if (v.show && sc.anger && T >= sc.anger[0] && T < sc.anger[1]) drawAnger(Math.round(v.x + 12), Math.round(v.feet - vpGet(A.who).h + 6), T);
+  if (sc.qmark && T >= sc.qmark[0] && T < sc.qmark[1] && (Math.floor(T * 3) & 1)) plate('?', Math.round(st.pet.x), FLOOR - 70, '#ffffff', '#14246a');
   fxDrawParts();
   for (const q of A.qs) { const u = q.age / q.life; if (u > 0.75 && (Math.floor(u * 40) & 1)) continue; textO('?', Math.round(q.x), Math.round(q.y), q.col, 'c', q.sc, '#14246a'); }
   for (const w of A.ws) { const u = w.age / w.life; if (u > 0.8 && (Math.floor(u * 40) & 1)) continue; textO(w.txt, Math.round(w.x), Math.round(w.y), '#ffffff', 'l', 1, '#1f7a3a'); }
-  // controcampo: testa intera
-  if (st.punch) {
-    const pu = A.sc.punch.find(q => T >= q.t0 && T < q.t1), p = (T - pu.t0) / (pu.t1 - pu.t0), P = vpGet(A.who), hs = headSprite(P, st.punch.face);
+  if (A.who === 'ale' && sc.id === 0) {
+    for (const q of A.ps) { const u = q.age / q.life; if (u > 0.8 && (Math.floor(u * 40) & 1)) continue; textO(q.txt, Math.round(clamp(q.x, tw(q.txt) / 2 + 3, W - tw(q.txt) / 2 - 3)), Math.round(q.y), q.col, 'c', 1, '#3a0a1a'); }
+    if (st.mad > 0.3 && T < AE) { const f = Math.floor(T * 15); if ((f % 3 === 0) || (st.mad > 0.7 && f % 3 === 1)) { const th = st.mad > 0.7 ? 3 : 2; rect(0, BAR, W, th, '#ff2a3a'); rect(0, H - th, W, th, '#ff2a3a'); rect(0, BAR, th, H - BAR, '#ff2a3a'); rect(W - th, BAR, th, H - BAR, '#ff2a3a'); } }
+  }
+  // inserti a schermo intero
+  if (st.cut) { const cu = st.cut; cu.draw(A, T, (T - cu.t0) / (cu.t1 - cu.t0), t); drawLetterbox(1); }
+  else if (st.punch) {
+    const pu = A.sc.punch.find(q => T >= q.t0 && T < q.t1), p = (T - pu.t0) / (pu.t1 - pu.t0), P = vpGet(A.who), hd = headSprite(P, st.punch.face);
     const ric = A.who === 'ric', cA = ric ? '#d8383a' : '#2b62c4', cB = ric ? '#3a0a1a' : '#f7c92b', sk = Math.round(Math.sin(T * 70) * (ric ? 2.5 : 1.2) * (1 - p));
     rect(0, BAR, W, H - BAR, cB); drawBurst(56, 46, T * (ric ? 2.2 : 1.1), cA, cB, 10, 110);
-    const z = p < 0.12 ? lerp(1.2, 2, easeOut(p / 0.12)) : 2, wz = Math.round(hs.w * z), hz = Math.round(hs.h * z);
-    ctx.drawImage(toCanvas(hs), 0, 0, hs.w, hs.h, Math.round(56 - P.rig.neck[0] * z + sk), Math.round(16 + (z < 2 ? 4 : 0)), wz, hz);
+    const z = p < 0.12 ? lerp(1.2, 2, easeOut(p / 0.12)) : 2, wz = Math.round(hd.w * z), hh = Math.round(hd.h * z);
+    ctx.drawImage(toCanvas(hd), 0, 0, hd.w, hd.h, Math.round(56 - P.rig.neck[0] * z + sk), Math.round(16 + (z < 2 ? 4 : 0)), wz, hh);
     if (ric) { drawAnger(30 + sk, 30, T); drawAnger(84 + sk, 28, T + 0.3); }
     drawLetterbox(1);
   }
   const stp = A.sc.stamps.find(s => T >= s.t0 && T < s.t1); if (stp) drawStamp(stp.txt, stp.sub, T - stp.t0, A.who, stp.y);
   else if (st.punch) { const pu = A.sc.punch.find(q => T >= q.t0 && T < q.t1); if (pu && pu.txt) drawStamp(pu.txt, null, T - pu.t0, A.who, 62); }
+  const hide = st.cut || st.punch;
   // cartellino con il nome
-  const ct = T - (sc.openT + 0.7); if (ct > 0 && ct < 2.0) { const q = easeOut(ct / 0.25), col = VCOL[A.who], nx = Math.round(lerp(W + 40, 88, q)); if (ct > 1.75 && (Math.floor(T * 30) & 1)) { } else { plate(VNAME[A.who], nx, BAR + 3, '#ffffff', col[1], 1, col[0]); if (A.who === 'ale') plate('HELP DESK', nx, BAR + 14, '#d4f5dc', col[1], 1, col[0]); } }
-  if (T > sc.openT + 0.6 && T < sc.exitT - 0.2 && T < sc.openT + 4.1) text('TASTO: SALTA', W - 3, H - 7, '#9fb4c8', 'r');
+  const ct = T - (sc.openT + 0.7); if (!hide && ct > 0 && ct < 2.0) { const q = easeOut(ct / 0.25), col = VCOL[A.who], nx = Math.round(lerp(W + 40, 88, q)); if (ct > 1.75 && (Math.floor(T * 30) & 1)) { } else { plate(VNAME[A.who], nx, BAR + 3, '#ffffff', col[1], 1, col[0]); if (A.who === 'ale') plate('HELP DESK', nx, BAR + 14, '#d4f5dc', col[1], 1, col[0]); } }
+  if (!hide && T > sc.openT + 0.6 && T < sc.exitT - 0.2 && (T < sc.openT + 4.1 || (sc.long && T > 12 && (T % 10) < 2.5))) text('TASTO: SALTA', W - 3, H - 7, '#9fb4c8', 'r');
   // battute
-  const ln = vLine(A, T); if (!st.punch) { if (ln && A.vpos) drawVBubble(ln.l.txt, ln.shown, A.vpos.x, A.who); drawBubble(); }
+  const ln = vLine(A, T); if (!hide) { if (sc.lr) { const lb = (ln && A.vpos) ? drawVBubbleL(ln.l.txt, ln.shown, A.vpos.x, A.who) : null; drawBubbleR(lb); } else { if (ln && A.vpos) drawVBubble(ln.l.txt, ln.shown, A.vpos.x, A.who); drawBubble(); } }
 }
 function visitScheduler(dt) {
   if (S.stage !== 'adult' || S.dead || S.dying || S.sleeping || anim || mode !== 'main' || G || S.wcPending || PET.wcGo || S.tantrum > 0 || quiet) return;
@@ -3570,7 +4172,7 @@ function visitScheduler(dt) {
   VD.timer -= dt; if (VD.timer <= 0) startVisit();
 }
 
-window.__tama = { startVisit, visitSkip, VD, DOOR, VSC, vpGet, PET, FX, SQ, GH, ALB, DBG, get OX() { return OX; }, get OY() { return OY; }, logoTap, dbgItems, dbgRun, dbgToggle, gameDate, get S() { return S; }, get anim() { return anim; }, get G() { return G; }, get mode() { return mode; }, get SC() { return SC; }, CFG, hitTest, doLink, press, tick1, startHatch, startEvolve, startDeath, startRun, startBed, startWake, startEat, startWC, runPress, endRun, pickNext, applyEvo, speak, poke, scold, activate, newEgg, toiletVisible, wcLogic, ghostPoke, skyPh,
+window.__tama = { VSCN, visRec, REACT, pickScene, startVisit, visitSkip, VD, DOOR, VSC, vpGet, PET, FX, SQ, GH, ALB, DBG, get OX() { return OX; }, get OY() { return OY; }, logoTap, dbgItems, dbgRun, dbgToggle, gameDate, get S() { return S; }, get anim() { return anim; }, get G() { return G; }, get mode() { return mode; }, get SC() { return SC; }, CFG, hitTest, doLink, press, tick1, startHatch, startEvolve, startDeath, startRun, startBed, startWake, startEat, startWC, runPress, endRun, pickNext, applyEvo, speak, poke, scold, activate, newEgg, toiletVisible, wcLogic, ghostPoke, skyPh,
   freeze(v) { freezeAnim = !!v; }, at(tt) { if (anim) { anim.t = tt; runEvents(anim); } }, setMode(m) { mode = m; }, setPage(p) { page = p; }, setSel(i) { sel = i; }, fxConfetti };
 })();
 

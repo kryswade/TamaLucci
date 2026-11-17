@@ -770,7 +770,7 @@ const BED = alias({ baby: [19, 6], child: [20, 7], teen: [22, 7.5], adult: [23, 
 const MENU = ['food', 'game', 'light', 'clean', 'med', 'disc', 'clock', 'stats'];
 const KEY = 'tamalucci.v9', ALBKEY = 'tamalucci.album';
 /* debug: attivo solo dopo 10 tocchi sul logo; con debug spento l'orologio segue l'ora di sistema */
-const DBG = { vis: 0, scn: -1, on: false, taps: 0, lastTap: 0, page: 0, row: 0, form: 'teen', pre: -1, ret: false };
+const DBG = { vis: 0, scn: -1, ani: 0, on: false, taps: 0, lastTap: 0, page: 0, row: 0, form: 'teen', pre: -1, ret: false };
 try { DBG.on = localStorage.getItem('tamalucci.dbg') === '1'; } catch (e) { }
 const BOT_Y = 146, ICX = i => 6 + (i % 4) * 26;      // barra icone sotto lo schermo + x delle 4 icone di ogni riga
 const FORM_LIST = ['baby', 'child', 'teen', 'adult', 'bully', 'thug', 'crim'];
@@ -1053,7 +1053,7 @@ function scold() {
   const ok = S.tantrum > 0;
   if (ok) { S.tantrum = 0; S.disc = Math.min(100, S.disc + 25); } else { S.happy = Math.max(0, S.happy - 1); S.disc = Math.max(0, S.disc - 4); }
   PET.moving = false; PET.v = 0; PET.settle = false; bub = null;
-  setAnim('scold', 3.4, () => { speak(ok ? 'scold' : 'scoldWrong', true); save(); }, { ok });
+  startScoldAnim(ok);
 }
 function activate(i) {
   const id = MENU[i];
@@ -1073,7 +1073,7 @@ function activate(i) {
       else { toast('TUTTO PULITO'); sfx('no'); }
       break;
     case 'med':
-      if (S.sick) { sfx('med'); fxRing(PET.x, FLOOR - 14, '#5bd66b', 2, 50, 0.7); fxBurst(PET.x, FLOOR - 16, 16, { shape: 'plus', cols: ['#5bd66b', '#ffffff'], v0: 10, v1: 40, g: -12, l0: 0.7, l1: 1.2 }); setAnim('med', 2.4, () => { S.sick = false; S.sickT = 0; speak('med', true); save(); }); }
+      if (S.sick) startMed();
       else { toast('STA BENE'); sfx('no'); }
       break;
     case 'disc': scold(); break;
@@ -1083,14 +1083,15 @@ function activate(i) {
 }
 function feed(kind) {
   PET.moving = false; PET.v = 0; PET.settle = false;
-  if (S.tantrum > 0) { sfx('no'); speak('tantrum', true); setAnim('refuse', 1.6, null); return; }
-  if (kind === 0) { if (S.hunger >= 4) { sfx('no'); speak('full', true); setAnim('refuse', 1.6, null); return; } S.hunger++; S.extra += 1; startEat('P'); }
-  else { if (S.happy >= 4 && S.hunger >= 4) { sfx('no'); speak('full', true); setAnim('refuse', 1.6, null); return; } S.happy = Math.min(4, S.happy + 1); S.extra += 2; startEat('M'); }
+  if (S.tantrum > 0) { startRefuse(kind, 'tantrum'); return; }
+  if (kind === 0) { if (S.hunger >= 4) { startRefuse(kind, 'full'); return; } S.hunger++; S.extra += 1; startEat('P'); }
+  else { if (S.happy >= 4 && S.hunger >= 4) { startRefuse(kind, 'full'); return; } S.happy = Math.min(4, S.happy + 1); S.extra += 2; startEat('M'); }
 }
 function poke() {
   if (S.dead) { ghostPoke(); return; }
   if (S.stage === 'egg' || S.sleeping || mode !== 'main' || anim || S.dying) return;
   if (PET.pend > 0 || PET.jy > 0) return;
+  if (S.tantrum <= 0 && nowMs() - lastPetAnim > 7000) { startPetAnim(); return; }
   PET.moving = false; PET.v = 0; PET.settle = false; PET.wait = Math.max(PET.wait, 1.0); PET.pend = 0.1;
   sfx('click'); speak('poke', true); fxHearts(PET.x, FLOOR - PET.h - 4, 2);
 }
@@ -1100,6 +1101,7 @@ const flashKey = id => { pressed[id] = nowMs() + 140; };
 function press(b) {
   audioInit(); flashKey(b);
   if (mode === 'debug') { dbgPress(b); return; }
+  if (mode === 'save') { svPress(b); return; }
   if (S.dead) { ghostPoke(); return; }
   if (S.stage === 'egg') { if (b === 'B' && !anim) startHatch(); return; }
   if (mode === 'anim' && anim && anim.type === 'visit') { visitSkip(); return; }
@@ -1115,26 +1117,27 @@ function press(b) {
 function doLink(id) {
   audioInit(); flashKey(id);
   if (id === 'sound') { soundOn = !soundOn; if (soundOn) sfx('ok'); }
+  else if (id === 'save') { if (mode === 'save') { SV.pend = null; mode = 'main'; sfx('click'); } else if (!anim && mode !== 'game') { SV.sel = 0; SV.pend = null; mode = 'save'; sel = -1; sfx('click'); } else sfx('no'); }
   else if (id === 'debug') { if (DBG.on && !anim && mode !== 'game') { mode = 'debug'; sel = -1; sfx('click'); } }
   else if (id === 'reset') { if (nowMs() < resetArm) { resetArm = 0; newEgg(); sfx('ok'); } else { resetArm = nowMs() + 3000; sfx('click'); } }
 }
 const BTN_Y = 212;
 const BTNS = [{ id: 'A', cx: 32, cy: BTN_Y, label: 'SCEGLI' }, { id: 'B', cx: 70, cy: BTN_Y, label: 'OK' }, { id: 'C', cx: 108, cy: BTN_Y, label: 'ANNULLA' }];
-const LINKS = [{ id: 'sound', x: 3, y: 246, w: 42, h: 12 }, { id: 'debug', x: 49, y: 246, w: 42, h: 12 }, { id: 'reset', x: 95, y: 246, w: 42, h: 12 }];
 function hitTest(lx, ly) {
   for (const b of BTNS) if (Math.hypot(lx - b.cx, ly - b.cy) <= 11) return { t: 'btn', id: b.id };
-  for (const l of LINKS) if ((l.id !== 'debug' || DBG.on) && lx >= l.x && lx < l.x + l.w && ly >= l.y && ly < l.y + l.h) return { t: 'link', id: l.id };
+  for (const l of links()) if (lx >= l.x && lx < l.x + l.w && ly >= l.y && ly < l.y + l.h) return { t: 'link', id: l.id };
   if (lx >= 12 && lx < 128 && ly >= 172 && ly < 198) return { t: 'logo' };
   if (lx >= SCR_X && lx < SCR_X + W && ly >= SCR_Y && ly < SCR_Y + H) return { t: 'screen', x: lx - SCR_X, y: ly - SCR_Y };
   return null;
 }
 function toLocal(e) { const r = cv.getBoundingClientRect(), k = r.width / LW; return [(e.clientX - r.left) / k - OX, (e.clientY - r.top) / k - OY]; }
 cv.addEventListener('pointerdown', e => {
-  e.preventDefault(); audioInit();
+  SV.ptr = e.pointerType || 'mouse'; e.preventDefault(); audioInit();
   const h = hitTest(...toLocal(e)); if (!h) return;
   if (h.t === 'logo') { logoTap(); return; }
   if (h.t === 'btn') press(h.id); else if (h.t === 'link') doLink(h.id);
   else if (mode === 'debug') dbgTap(h.x, h.y);
+  else if (mode === 'save') svTap(h.x, h.y);
   else if (S.stage === 'egg' && !S.dead && !anim && h.y < 38 && h.x > 4 && h.x < 108) logoTap();
   else if (mode === 'game') press('B');
   else if (S.dead) ghostPoke();
@@ -1142,10 +1145,12 @@ cv.addEventListener('pointerdown', e => {
 });
 cv.addEventListener('pointermove', e => { const h = hitTest(...toLocal(e)); cv.style.cursor = h && (h.t !== 'screen') ? 'pointer' : 'default'; });
 window.addEventListener('keydown', e => {
+  SV.ptr = 'key';
   const k = e.key.toLowerCase();
   if (['arrowleft', 'a', '1'].includes(k)) press('A');
   else if (['arrowdown', 'arrowup', 'w', 'enter', 's', ' ', '2'].includes(k)) { e.preventDefault(); press('B'); }
   else if (['arrowright', 'escape', 'd', 'backspace', '3'].includes(k)) press('C');
+  svFlushPick();
 });
 
 /* ---------- comportamento del pet ---------- */
@@ -1187,7 +1192,8 @@ function petExpr(t) {
   if (S.sleeping) return 'sleep';
   if (a && a.type === 'scold') return a.t < 1.0 ? 'sad' : (a.ok ? 'sad' : 'refuse');
   if (a && a.type === 'refuse') return 'refuse';
-  if (a && (a.type === 'happy' || a.type === 'med' || a.type === 'evolve')) return 'happy';
+  if (a && a.type === 'med') return a.t > a.dur / 2 ? 'happy' : 'sad';
+  if (a && (a.type === 'happy' || a.type === 'evolve')) return 'happy';
   if (a && (a.type === 'eatP' || a.type === 'eatM')) return 'smile';
   if (S.tantrum > 0) return 'refuse';
   if (S.sick || S.hunger <= 1 || S.happy <= 1) e = 'sad';
@@ -2035,8 +2041,8 @@ function rRate(g) { if (!g.finished) { g.stars = 0; return; } const ratio = g.sp
 function endRun() {
   const g = G; if (!g) return; G = null; mode = 'main'; fxClear();
   S.tired += 14; S.extra = Math.max(-2, S.extra - 1); PET.wait = 1; PET.x = 56; PET.moving = false; if (isAdultish(S.stage)) S.assets += g.coins;
-  if (g.finished) { S.happy = Math.min(4, S.happy + 1 + (g.stars >= 3 ? 1 : 0)); S.wins++; setAnim('happy', 1.8, () => save()); sfx('win'); speak('win', true); fxConfetti(PET.x, FLOOR - 24, 46, 1.2); fxShake(2); }
-  else { toast('RIPROVA!'); speak('lose', true); }
+  if (g.finished) { S.happy = Math.min(4, S.happy + 1 + (g.stars >= 3 ? 1 : 0)); S.wins++; startWin(g.stars || 1, g); }
+  else { startWin(0, g); }
   save();
 }
 const mod = (a, m) => ((a % m) + m) % m;
@@ -2398,7 +2404,7 @@ function drawDead(t) {
 const GOOD_NEXT = { egg: 'baby', baby: 'child', child: 'teen', teen: 'adult', bully: 'adult' };
 const BAD_NEXT = { child: 'bully', teen: 'thug', bully: 'crim', adult: 'thug', thug: 'crim', crim: 'thug' };
 const CLOCK_PRE = [['ALBA', 6, 40], ['GIORNO', 12, 0], ['TRAMONTO', 18, 50], ['NOTTE', 23, 30]];
-const DBG_TABS = ['EVO', 'ORA', 'STA', 'CUR', 'VIT', 'OSP', 'SYS'];
+const DBG_TABS = ['EVO', 'ORA', 'STA', 'CUR', 'VIT', 'OSP', 'ANI', 'SYS'];
 const nmf = f => f ? NAMES[f] : '-';
 function dbgSave() { try { localStorage.setItem('tamalucci.dbg', DBG.on ? '1' : '0'); } catch (e) { } }
 function dbgToggle() {
@@ -2441,6 +2447,12 @@ function dbgKillNow() { G = null; anim = null; S.dying = false; S.dead = true; S
 const dbgOk = m => { toast(m); sfx('ok'); };
 function dbgItems(p) {
   const T = (l, f) => ({ l, f });
+    if (p === 6) return [
+      T('ANIM: ' + ANIMS[DBG.ani][0], () => { DBG.ani = (DBG.ani + 1) % ANIMS.length; sfx('click'); }),
+      T('LANCIA ANIMAZIONE', () => { dbgGo(); ANIMS[DBG.ani][1](); }),
+      T('FORMA: ' + NAMES[DBG.form], () => { DBG.form = FORM_LIST[(FORM_LIST.indexOf(DBG.form) + 1) % FORM_LIST.length]; sfx('click'); }),
+      T('SALTA SUBITO A ' + NAMES[DBG.form], () => dbgJump(DBG.form))
+    ];
     if (p === 5) return [
       T('OSPITE: ' + VNAME[VKEYS[DBG.vis]], () => { DBG.vis = (DBG.vis + 1) % VKEYS.length; sfx('click'); }),
       T('SCENA: ' + (DBG.scn < 0 ? 'A CASO' : (DBG.scn + 1) + ' ' + VSCN[VKEYS[DBG.vis]][DBG.scn].title.slice(0, 13)), () => { DBG.scn = DBG.scn >= 4 ? -1 : DBG.scn + 1; sfx('click'); }),
@@ -2489,6 +2501,7 @@ function dbgItems(p) {
   return [
     T('CANCELLA ALBUM', () => { for (const k in ALB) delete ALB[k]; try { localStorage.setItem(ALBKEY, '{}'); } catch (e) { } unlockForm(S.stage); dbgOk('ALBUM VUOTO'); }),
     T('SBLOCCA ALBUM', () => { FORM_LIST.forEach(f => { ALB[f] = 1; }); try { localStorage.setItem(ALBKEY, JSON.stringify(ALB)); } catch (e) { } dbgOk('ALBUM COMPLETO'); }),
+    T('ESPORTA SALVATAGGIO', svExport), T('IMPORTA SALVATAGGIO', svOpenImport), T('RIPRISTINA COPIA', svRestore),
     T('ESCI DAL DEBUG', dbgToggle)
   ];
 }
@@ -2500,7 +2513,7 @@ function dbgPress(b) {
 }
 function dbgRun() { if (anim) return; const it = dbgItems(DBG.page)[DBG.row]; if (it) { it.f(); save(); } }
 function dbgTap(x, y) {
-  if (y >= 22 && y < 32) { const i = Math.floor((x - 2) / 15); if (i >= 0 && i < DBG_TABS.length) { DBG.page = i; DBG.row = 0; sfx('click'); } return; }
+  if (y >= 22 && y < 32) { const i = Math.floor((x - 2) / 13); if (i >= 0 && i < DBG_TABS.length) { DBG.page = i; DBG.row = 0; sfx('click'); } return; }
   const i = Math.floor((y - 32) / 7), items = dbgItems(DBG.page);
   if (i >= 0 && i < items.length) { DBG.row = i; sfx('click'); dbgRun(); }
 }
@@ -2508,7 +2521,7 @@ function drawDebug(t) {
   const d = gameDate();
   rect(0, BAR, W, H - BAR, '#e9f2f6'); rect(0, BAR, W, 9, '#7a1a24'); rect(0, BAR + 9, W, 1, K);
   text((S.dead ? 'MORTO' : NAMES[S.stage]) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ' E' + S.cm + ' D' + Math.round(S.disc), 56, BAR + 2, '#ffffff', 'c');
-  DBG_TABS.forEach((n, i) => { const x = 2 + i * 15, on = i === DBG.page; rect(x, 22, 14, 9, K); rect(x + 1, 23, 12, 7, on ? '#f7c92b' : '#cfd8de'); text(n, x + 7, 25, K, 'c'); });
+  DBG_TABS.forEach((n, i) => { const x = 2 + i * 13, on = i === DBG.page; rect(x, 22, 13, 9, K); rect(x + 1, 23, 11, 7, on ? '#f7c92b' : '#cfd8de'); text(n, x + 6.5, 25, K, 'c'); });
   dbgItems(DBG.page).forEach((it, i) => { const y = 33 + i * 7, on = i === DBG.row; if (on) { rect(2, y - 1, 108, 7, '#f7c92b'); rect(2, y - 1, 108, 1, K); } text((on ? '>' : ' ') + it.l, 4, y, K); });
   text('A:AVANTI B:OK C:ESCI', 56, 84, '#66727c', 'c');
 }
@@ -3043,7 +3056,7 @@ function drawWorld(t, noBubble) {
   const ex = petExpr(t), pose = petPose(t, ex), stg = S.stage, front = getSprite(stg, ex, pose, S.sick); PET.h = front.h;
   const walking = PET.moving && !a && !S.sleeping; let sp = front, anc = ANC[stg], px, py, sitting = false, bob = walking ? 0 : (Math.floor(t * 1.5) % 2 ? -1 : 0), dx = 0, k0 = 0;
   if (S.sleeping) bob = 0; if (PET.jy > 0) bob = -Math.round(PET.jy);
-  if (a) { if (a.type === 'happy' || a.type === 'med') bob = -Math.round(Math.abs(Math.sin(a.t * 9)) * 5); if (a.type === 'refuse') dx = Math.floor(a.t * 12) % 2 ? 2 : -2; }
+  if (a) { if (a.type === 'happy') bob = -Math.round(Math.abs(Math.sin(a.t * 9)) * 5); if (a.type === 'refuse') dx = Math.floor(a.t * 12) % 2 ? 2 : -2; }
   if (S.tantrum > 0 && !a) { bob = Math.floor(t * 10) % 2 ? -2 : 0; dx = Math.floor(t * 14) % 2 ? 1 : -1; }
   if (scA) { k0 = -0.12 - 0.06 * Math.sin(scA.t * 8); dx = scA.t > 0.5 && scA.t < 2.2 ? Math.round(Math.sin(scA.t * 25)) : 0; bob = 0; }
   if (wcA) {
@@ -3065,7 +3078,6 @@ function drawWorld(t, noBubble) {
   }
   if (S.tantrum > 0 && !a) drawTantrum(px, py, t);
   if (scA) { drawScoldOverlay(scA, py, sp); if (scA.ok && scA.t > 2.5) plate('DISCIPLINA +', 56, BAR + 3, '#ffffff', '#2e7a3a'); if (!scA.ok && scA.t > 2.5) plate('INGIUSTO!', 56, BAR + 3, '#ffffff', '#7a1a24'); }
-  if (a && a.type === 'med') blit(ICONS.med, PET.x - 4, py - 10 - Math.round(a.t * 2));
   if (a && a.type === 'happy') for (let i = 0; i < 3; i++) { const q = (a.t * 1.2 + i / 3) % 1; if (q > 0.7 && (Math.floor(q * 30) & 1)) continue; blit(ICONS.heart, PET.x - 12 + i * 10, py - 4 - q * 12); }
   if (shA && shA.t > 7.2) for (let i = 0; i < 4; i++) { if (Math.floor(t * 8 + i) % 2) continue; star(Math.round(PET.x - 16 + i * 11), Math.round(py + 4 + (i % 2) * 14), i % 2 ? '#f7c92b' : '#7fcdf0', 1 + (i % 2)); }
   if (!a && !S.sleeping && S.happy >= 3 && !S.sick && S.tantrum <= 0 && Math.floor(t) % 10 < 2 && !(bub && nowMs() < bub.until) && !isBad(stg)) blit(ICONS.heart, PET.x + 9, py - 6);
@@ -3077,6 +3089,7 @@ function drawCine(A, t) { const T = A.t - 0.4; if (A.type === 'bed') drawSleepSc
 function drawScreen(t) {
   bubAnchor = null; const A = anim;
   if (mode === 'debug' && !A) { drawDebug(t); drawBar(); fxDrawParts(); }
+  else if (mode === 'save' && !A) { drawSaveMenu(t); drawBar(); fxDrawParts(); }
   else if (A && A.type === 'die') { drawDeath(A, t); fxDrawParts(); drawDeathUI(A); drawBubble(); }
   else if (S.dead) drawDead(t);
   else if (A && A.type === 'hatch') { drawHatch(A, t); fxDrawParts(); drawHatchUI(A); }
@@ -3085,6 +3098,8 @@ function drawScreen(t) {
     const cine = A && (A.type === 'bed' || A.type === 'eatP' || A.type === 'eatM');
     if (A && A.type === 'evolve') { drawEvolve(A, t); fxDrawParts(); drawEvolveUI(A); }
     else if (A && A.type === 'visit') { drawVisit(A, t); }
+    else if (A && A.type === 'med') { drawMedAnim(A, t); }
+    else if (A && (A.type === 'scold' || A.type === 'pet' || A.type === 'refuse' || A.type === 'win')) { drawAni(A, t); fxDrawParts(); drawBubble(); }
     else if (cine) {
       if (A.t >= 0.4 && A.t < A.dur - 0.4) { drawCine(A, t); fxDrawParts(); drawBubble(); }
       else if (A.type === 'bed' && A.t >= A.dur - 0.4) { drawSleepScene(null, t); fxDrawParts(); drawBubble(); }   // la tendina si riapre già sulla scena del sonno
@@ -3154,8 +3169,13 @@ function drawBoat(t) {
 }
 function drawFront(t) { const P = skyPh(); for (let x = -OX; x < DW + OX; x++) { const wy = 235 + Math.round(Math.sin((x + t * 14) / 5) * 1.3); rect(x, wy, 1, 9, P.sea1); rect(x, wy, 1, 1, mixHex('#b8e6fb', '#5a78c0', P.night)); if ((x + Math.floor(t * 6)) % 7 === 0) rect(x, wy + 3, 2, 1, P.wave1); } }
 function drawLinks() {
-  const n = nowMs(), lab = { sound: 'SUONO:' + (soundOn ? 'ON' : 'OFF'), debug: 'DEBUG', reset: n < resetArm ? 'SICURO?' : 'NUOVA' };
-  LINKS.forEach(l => { if (l.id === 'debug' && !DBG.on) return; const dn = (pressed[l.id] || 0) > n, armed = l.id === 'reset' && n < resetArm, o = dn ? 1 : 0; if (!dn) rect(l.x, l.y + l.h, l.w, 1, '#08142e'); rect(l.x, l.y + o, l.w, l.h, K); rect(l.x + 1, l.y + 1 + o, l.w - 2, l.h - 2, armed ? '#f7c92b' : '#f4f8fa'); rect(l.x + 1, l.y + l.h - 2 + o, l.w - 2, 1, armed ? '#c99a14' : '#c4d8e4'); text(lab[l.id], l.x + l.w / 2, l.y + 4 + o, K, 'c'); });
+  const n = nowMs(), blink = Math.floor(n / 500) % 2;
+  links().forEach(l => {
+    const dn = (pressed[l.id] || 0) > n, armed = l.id === 'reset' && n < resetArm, on = armed || (l.id === 'save' && mode === 'save'), o = dn ? 1 : 0;
+    const lab = l.id === 'sound' ? (soundOn ? 'SUONO' : 'MUTO') : l.id === 'save' ? 'ESPORTA PET' : l.id === 'debug' ? 'DEBUG' : (armed ? (l.w >= 31 ? 'SICURO?' : 'OK?') : 'NUOVA'), col = (l.id === 'sound' && !soundOn) ? '#d8383a' : K;
+    if (!dn) rect(l.x, l.y + l.h, l.w, 1, '#08142e'); rect(l.x, l.y + o, l.w, l.h, K); rect(l.x + 1, l.y + 1 + o, l.w - 2, l.h - 2, on ? '#f7c92b' : '#f4f8fa'); rect(l.x + 1, l.y + l.h - 2 + o, l.w - 2, 1, on ? '#c99a14' : '#c4d8e4'); text(lab, l.x + l.w / 2, l.y + 4 + o, col, 'c');
+    if (l.id === 'save' && svDue() && blink) { rect(l.x + l.w - 5, l.y - 2, 5, 5, K); rect(l.x + l.w - 4, l.y - 1, 3, 3, '#d8383a'); }
+  });
   rect(4, 262, 132, 10, K); rect(5, 263, 130, 8, DBG.on ? '#7a1a24' : NAVY); text(DBG.on ? 'DEBUG ATTIVO: 10 TOCCHI = OFF' : 'TASTIERA: A S D / FRECCE', 70, 265, DBG.on ? '#ffffff' : '#cfe2f5', 'c');
 }
 function render(ts) {
@@ -3199,7 +3219,7 @@ let lastF = nowMs();
 function frame(ts) {
   const dt = Math.min(0.1, (ts - lastF) / 1000); lastF = ts; let fdt = dt; if (FX.stop > 0) { FX.stop -= dt; fdt = 0; }
   if (anim) { if (!freezeAnim) anim.t += fdt; runEvents(anim); if (anim.t >= anim.dur) { const d = anim.done; anim = null; if (mode === 'anim') mode = (DBG.ret && DBG.on) ? 'debug' : 'main'; DBG.ret = false; if (d) d(); } }
-  wcLogic(); fxScript(fdt); lifeFx(fdt); fxUpdate(fdt); sqUpdate(fdt); visitScheduler(fdt); visitTick(fdt);
+  wcLogic(); fxScript(fdt); lifeFx(fdt); fxUpdate(fdt); sqUpdate(fdt); visitScheduler(fdt); visitTick(fdt); aniFx(fdt);
   if (anim && anim.type === 'scold' && anim.t > 0.9 && anim.t < 2.6 && Math.random() < fdt * 22) fxAdd({ x: PET.x + rnd(-5, 5), y: FLOOR - PET.h * 0.7, vx: rnd(-14, 14), vy: -rnd(10, 26), g: 150, life: 0.8, c: '#58b8f0', shape: 'drop', fade: false });
   if (flash > 0) flash = Math.max(0, flash - dt * 1.4);
   if (G && mode === 'game') runUpdate(fdt);
@@ -3207,14 +3227,16 @@ function frame(ts) {
   updatePet(fdt); render(ts); requestAnimationFrame(frame);
 }
 function secondTick() { const n = Date.now(); advance((n - S.last) / 1000); S.last = n; }
-(function boot() {
+function bootState() {
   if (!DBG.on) S.clockOff = 0;
   const offS = clamp((Date.now() - S.last) / 1000, 0, 172800); S.frac = 0; quiet = true;
   offTicks = 0; if (offS > 3 && !S.dead) { const n = Math.floor(offS * rate()); for (let i = 0; i < n && !S.dead; i++) tick1(true); }
   S.last = Date.now(); quiet = false; bub = null;
   if (S.evoNews) { toast('NEL FRATTEMPO: ' + NAMES[S.evoNews]); S.evoNews = ''; }
   if (S.dead && !S.deathSeen) { S.dead = false; startDeath(); } else if (S.dead) GH.chat = 4;
-})();
+  if (!(toastMsg && nowMs() < toastUntil) && !S.dead && svDue()) toast('ESPORTA IL SALVATAGGIO!');
+}
+bootState();
 setInterval(() => { if (!freezeAnim) secondTick(); save(); }, 1000); window.addEventListener('beforeunload', save); requestAnimationFrame(frame);
 /* ============================================================================
    OSPITI IN UFFICIO (stadio LAVORATORE): una PORTA nel muro. Qualcuno bussa, il pet va ad aprire e si affaccia
@@ -4172,7 +4194,623 @@ function visitScheduler(dt) {
   VD.timer -= dt; if (VD.timer <= 0) startVisit();
 }
 
-window.__tama = { VSCN, visRec, REACT, pickScene, startVisit, visitSkip, VD, DOOR, VSC, vpGet, PET, FX, SQ, GH, ALB, DBG, get OX() { return OX; }, get OY() { return OY; }, logoTap, dbgItems, dbgRun, dbgToggle, gameDate, get S() { return S; }, get anim() { return anim; }, get G() { return G; }, get mode() { return mode; }, get SC() { return SC; }, CFG, hitTest, doLink, press, tick1, startHatch, startEvolve, startDeath, startRun, startBed, startWake, startEat, startWC, runPress, endRun, pickNext, applyEvo, speak, poke, scold, activate, newEgg, toiletVisible, wcLogic, ghostPoke, skyPh,
+/* ============================================================================
+   ANIMAZIONI PER LE ATTIVITA' CHE NON AVEVANO UNA SCENA VERA
+     CURA        -> infermeria di bordo (vicolo / retro del pub / cella per le forme cattive): febbre, raggi X, batteri, pillola, guarigione
+     SGRIDATA    -> il dito del Comandante: riflettore, mano gigante, urla a tutto schermo, nuvola temporalesca / ingiustizia
+     COCCOLE     -> la tua mano che accarezza: fusa, cuori, note, sguardo a occhi chiusi
+     RIFIUTO     -> il cibo che non va: scuotere la testa, "SONO PIENO" (rutto) o capriccio (piatto che vola)
+     VITTORIA    -> podio a Genova con medaglia, cannoni di coriandoli e fuochi; SCONFITTA -> pioggia e promessa di rivincita
+   Tutte funzioni del tempo T dell'animazione, come le altre cinematiche.
+   ============================================================================ */
+const PG = alias({ adult: { mr: 25, er: 17, mx: -1 }, teen: { mr: 24, er: 17, mx: -1 }, child: { mr: 19, er: 14, mx: -1 }, baby: { mr: 14, er: 9, mx: 0 } });
+const EYX = alias({ adult: [-6, 3], teen: [-6, 3], child: [-5, 5], baby: [-4, 5] });
+function aniPet(stg, x, expr, pose, sick, dx, dy, k, feet, sil) {
+  const sp = getSprite(stg, expr, pose, sick), f = feet === undefined ? FLOOR : feet, px = Math.round(x - ANC[stg] + (dx || 0)), py = Math.round(f - sp.h + (dy || 0));
+  ctx.globalAlpha = 0.28; rect(Math.round(x - 9), f, 18, 2, '#000'); ctx.globalAlpha = 1;
+  if (sil) blitSil(sp, px, py, sil, null, k || 0); else blitSK(sp, px, py, k || 0);
+  return { sp, px, py };
+}
+/* ---------- mani giganti (sprite pixel art + rotazione a pixel) ---------- */
+const ANIS = {};
+function aniHand(kind) {
+  if (ANIS[kind]) return ANIS[kind];
+  const R = (g, x, y, w, h, c) => rectc(g, x, y, w, h, c);
+  if (kind === 'big') {                               // mano del Comandante: manica blu con tre galloni, guanto bianco, indice puntato
+    const g = blank(24, 58);
+    R(g, 3, 0, 18, 18, 'N'); R(g, 3, 0, 3, 18, 'u'); R(g, 3, 5, 18, 2, 'Y'); R(g, 3, 9, 18, 2, 'Y'); R(g, 3, 13, 18, 2, 'Y');
+    R(g, 2, 18, 20, 5, 'W'); R(g, 2, 21, 20, 2, 'w'); R(g, 3, 23, 18, 12, 'W'); R(g, 17, 23, 4, 12, 'w');
+    R(g, 0, 26, 4, 8, 'W'); R(g, 0, 32, 4, 2, 'w'); R(g, 3, 34, 8, 4, 'W'); R(g, 3, 36, 8, 1, 'w'); R(g, 18, 33, 3, 5, 'w');
+    R(g, 11, 35, 7, 22, 'W'); R(g, 15, 35, 3, 22, 'w'); R(g, 12, 56, 5, 1, 'w');
+    return ANIS[kind] = { sp: toSprite(addOutline(g), false), pv: [13, 21], L: 37 };
+  }
+  const g = blank(22, 30);                            // mano che accarezza: manica di camicia, palmo aperto
+  R(g, 4, 0, 14, 8, 'W'); R(g, 14, 0, 4, 8, 'w'); R(g, 4, 7, 14, 1, 'w'); R(g, 6, 8, 10, 3, 'S');
+  R(g, 3, 11, 16, 10, 'S'); R(g, 15, 11, 4, 10, 's'); for (let i = 0; i < 4; i++) { R(g, 3 + i * 4, 21, 4, 6, 'S'); R(g, 6 + i * 4, 21, 1, 5, 's'); }
+  R(g, 0, 14, 4, 7, 'S'); R(g, 0, 19, 4, 2, 's');
+  return ANIS[kind] = { sp: toSprite(addOutline(g), false), pv: [13, 6], L: 26 };
+}
+function rotBig(sp, px, py, deg) {
+  const key = '_rb' + px + '_' + py + '_' + deg; if (sp[key]) return sp[key];
+  const R = Math.ceil(Math.max(Math.hypot(px, py), Math.hypot(sp.w - px, py), Math.hypot(px, sp.h - py), Math.hypot(sp.w - px, sp.h - py))) + 2, N = 2 * R + 1, rad = deg * Math.PI / 180, c = Math.cos(rad), s = Math.sin(rad);
+  const cv = mkCan(N, N, g => { for (let dy = 0; dy < N; dy++) for (let dx = 0; dx < N; dx++) { const vx = dx - R, vy = dy - R, sx = vx * c + vy * s + px + 0.5, sy = -vx * s + vy * c + py + 0.5, ix = Math.floor(sx), iy = Math.floor(sy); if (ix >= 0 && iy >= 0 && ix < sp.w && iy < sp.h) { const col = sp.g[iy][ix]; if (col) { g.fillStyle = col; g.fillRect(dx, dy, 1, 1); } } } });
+  return sp[key] = { cv, R };
+}
+function drawRotSprite(sp, pvx, pvy, deg, ax, ay) {
+  deg = Math.round(deg / 3) * 3;
+  if (!deg) { ctx.drawImage(toCanvas(sp), Math.round(ax - pvx), Math.round(ay - pvy)); return; }
+  const r = rotBig(sp, pvx, pvy, deg); ctx.drawImage(r.cv, Math.round(ax - r.R), Math.round(ay - r.R));
+}
+/* mano con la punta (indice / palmo) in (tx,ty), inclinata di deg (positivo = ruota in senso orario) */
+function drawHandTip(kind, tx, ty, deg) {
+  const h = aniHand(kind), a = deg * Math.PI / 180;
+  drawRotSprite(h.sp, h.pv[0], h.pv[1], deg, tx + h.L * Math.sin(a), ty - h.L * Math.cos(a));
+}
+/* ---------- braccio del dottore / infermiere: arriva da destra con un'IK a due segmenti ---------- */
+function docArm(tx, ty, o) {
+  o = o || {}; const col = o.col || '#f4f8fa', cuff = o.cuff === undefined ? '#2e9e49' : o.cuff, glove = o.glove || '#58b8f0';
+  const sx = W + 16, sy = BAR + 10, e = ik(sx, sy, tx, ty, 42, 42, 1), m = pmNew();
+  const sh = pmNew(); pmLine(sh, sx, sy + 2, e[0], e[1] + 2, 3.6, '#b4c0c9'); pmLine(sh, e[0], e[1] + 2, tx + 3, ty + 2, 3, '#b4c0c9'); pmDraw(sh, 0, 0, false);
+  pmLine(m, sx, sy, e[0], e[1], 3.6, col); pmLine(m, e[0], e[1], tx + 3, ty, 3, col); pmDraw(m);
+  if (cuff) { const c = pmNew(); pmEll(c, tx + 4, ty, 3.2, 3.2, cuff); pmDraw(c); }
+  const h = pmNew(); pmEll(h, tx, ty, 2.8, 2.6, glove); pmDraw(h);
+}
+/* ---------- transizione a croci (cura) ---------- */
+function drawCrossWipe(f, c1, c2) {
+  if (f <= 0.001) return; const nI = Math.ceil(W / 10), nJ = Math.ceil((H - BAR) / 10);
+  for (let j = 0; j < nJ; j++) for (let i = 0; i < nI; i++) {
+    const order = (i + j) / (nI + nJ - 2), p = c01((f - order * 0.7) / 0.3), sz = Math.round(10 * p); if (sz <= 0) continue;
+    const cx = i * 10 + 5, cy = BAR + j * 10 + 5, hs2 = sz / 2;
+    rect(cx - hs2, cy - hs2, sz, sz, K); if (sz > 2) rect(cx - hs2 + 1, cy - hs2 + 1, sz - 2, sz - 2, c2);
+    if (sz >= 6) { const a = Math.max(1, Math.round(sz / 9)), L = Math.round(sz / 2) - 1; rect(cx - L, cy - a, 2 * L + 1, 2 * a + 1, c1); rect(cx - a, cy - L, 2 * a + 1, 2 * L + 1, c1); }
+  }
+}
+function ellO(cx, cy, rx, ry, c) { const n = Math.max(16, Math.round((rx + ry) * 3.2)); for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; rect(Math.round(cx + Math.cos(a) * rx), Math.round(cy + Math.sin(a) * ry), 1, 1, c); } }
+function drawStormCloud(cx, cy, sc, t, white) {
+  cx = Math.round(cx); cy = Math.round(cy);
+  const base = white ? '#f4f8fa' : '#4a5264', hi = white ? '#ffffff' : '#6a7488', lo = white ? '#c4d8e4' : '#343a4a', m = pmNew();
+  [[-12, 3, 7], [-5, -2, 8], [4, -3, 8], [12, 2, 7], [0, 3, 7]].forEach(c => pmEll(m, cx + c[0] * sc, cy + c[1] * sc, c[2] * sc, c[2] * sc * 0.78, base));
+  for (const [k] of m) { const p = k.split(','); if (+p[1] > cy + 2 * sc) m.set(k, lo); else if (+p[1] < cy - 3 * sc) m.set(k, hi); }
+  pmDraw(m);
+  if (!white) { rect(cx - 7, cy, 4, 3, '#ffffff'); rect(cx + 3, cy, 4, 3, '#ffffff'); rect(cx - 5, cy + 1, 2, 2, K); rect(cx + 3, cy + 1, 2, 2, K); line1(cx - 8, cy - 2, cx - 3, cy, K); line1(cx + 8, cy - 2, cx + 3, cy, K); }
+}
+function boltAt(x, y0, y1, seed) { let px = x, py = y0; for (let i = 1; i <= 5; i++) { const nx = x + (hash(seed * 7 + i) - 0.5) * 12, ny = lerp(y0, y1, i / 5); line1(px + 1, py, nx + 1, ny, '#f7c92b'); line1(px, py, nx, ny, '#ffffff'); px = nx; py = ny; } }
+/* ============================================================================
+   CURA
+   ============================================================================ */
+const MED = { dur: 11.6, PX: 40, X1: [3.4, 5.3], PILL: [5.3, 7.1], X2: [7.1, 8.8], CURE: 8.8 };
+function medPlan(stg) {
+  const sp = getSprite(stg, 'sad', 'down', true), g = PG[stg], top = FLOOR - sp.h, PX = MED.PX;
+  const fr = [[0.50, 0.09], [0.38, 0.17], [0.62, 0.18], [0.36, 0.46], [0.64, 0.47], [0.48, 0.58], [0.52, 0.38]];
+  const bx = PX, by = top + Math.round(sp.h * 0.58), hit = MED.X2[0] + 0.62;
+  const mic = fr.map((p, i) => { const x = Math.round(PX + (p[0] - 0.5) * sp.w * 0.95), y = Math.round(top + p[1] * sp.h); return { x, y, rev: MED.X1[0] + 0.2 + c01((y - top) / sp.h) * 1.15, die: hit + Math.hypot(x - bx, y - by) / 50 + 0.05, ph: i * 1.7 }; });
+  return { sp, top, PX, mx: PX + g.mx, my: top + g.mr, bx, by, hit, mic, maxDie: Math.max(...mic.map(m => m.die)) };
+}
+function ecgOff(u) { const g = (c, wd, a) => a * Math.exp(-Math.pow((u - c) / wd, 2)); return g(0.15, 0.04, 0.16) - g(0.28, 0.012, 0.25) + g(0.31, 0.013, 1) - g(0.35, 0.014, 0.4) + g(0.52, 0.05, 0.26); }
+function drawEcg(x, y, w, h, t, mode) {
+  ob(x, y, w, h, '#06130c', null);
+  for (let gx = x + 4; gx < x + w - 1; gx += 6) rect(gx, y + 1, 1, h - 2, '#0c2a1a'); for (let gy = y + 4; gy < y + h - 1; gy += 6) rect(x + 1, gy, w - 2, 1, '#0c2a1a');
+  const fev = mode === 'fever', cyc = fev ? 3.4 : 2.0, spd = fev ? 1.9 : 0.8, amp = (h - 6) * (fev ? 0.52 : 0.42), mid = y + h / 2 + 2; let px = null, py = null;
+  for (let i = 0; i < w - 2; i++) {
+    const ph = (((i / (w - 2)) * cyc - t * spd) % 1 + 1) % 1; let off = ecgOff(ph); if (fev) off += Math.sin(t * 40 + i * 0.7) * 0.08;
+    const yy = Math.round(mid - off * amp), xx = x + 1 + i; if (px !== null) line1(px, py, xx, yy, fev ? '#ff6a7a' : '#5bff8a'); px = xx; py = yy;
+  }
+}
+function drawTempPanel(x, y, val, col) { ob(x, y, 34, 20, '#06130c', null); text('TEMP C', x + 3, y + 2, '#2e7a3a'); text(val, x + 17, y + 9, col, 'c', 2); }
+function drawInfirmary(t) {
+  rect(0, BAR, W, 62, '#d9f0ea');
+  for (let r = 0; r < 7; r++) { rect(0, BAR + 4 + r * 10, W, 1, '#c1e0d8'); for (let x = 7 + (r % 2) * 7; x < W; x += 14) rect(x, BAR + 4 + r * 10, 1, 10, '#c1e0d8'); }
+  rect(0, BAR, W, 3, '#2e9e49'); rect(0, BAR + 3, W, 1, K);
+  rect(0, 72, W, 2, '#9ec8bd'); rect(0, 74, W, 1, K); rect(0, 75, W, 15, '#e7ecf0'); for (let x = 0; x < W; x += 16) rect(x, 76, 1, 14, '#cfd8de'); rect(0, 83, W, 1, '#cfd8de');
+  ob(2, 22, 20, 36, '#f4f8fa', '#c4d8e4'); rect(4, 24, 16, 22, '#bfe8f4'); rect(4, 35, 16, 1, '#9ec8d8');                                  // armadietto dei farmaci
+  for (let i = 0; i < 3; i++) { const c = ['#d8383a', '#f7c92b', '#58b8f0'][i]; rect(6 + i * 5, 27, 3, 8, K); rect(7 + i * 5, 28, 1, 6, c); rect(6 + i * 5, 38, 3, 7, K); rect(7 + i * 5, 39, 1, 5, c); }
+  rect(9, 50, 4, 7, '#d8383a'); rect(7, 52, 8, 3, '#d8383a');
+  porthole(59, 30, 7, t, true);
+  ob(97, 17, 12, 14, '#cdeefb', '#7fcdf0'); rect(98, 22, 10, 1, '#58b8f0'); rect(102, 31, 2, 54, K); rect(103, 31, 1, 54, '#cfd8de'); rect(96, 84, 14, 2, K); rect(97, 83, 12, 1, '#9ba7b0');   // flebo
+  rect(103, 33 + Math.floor((t * 12) % 14), 1, 2, '#7fcdf0');
+}
+function medProps(st, t) {
+  const m = pmNew(); pmRect(m, 92, 71, 16, 10, '#ffffff'); pmRect(m, 98, 73, 4, 6, '#d8383a'); pmRect(m, 95, 75, 10, 2, '#d8383a'); pmDraw(m);
+  rect(70, 13, 8, 2, '#d8383a'); rect(73, 10, 2, 8, '#d8383a');
+}
+function drawThermo(x0, y0, x1, y1, lvl) {
+  const m = pmNew(); pmLine(m, x0, y0, x1, y1, 1.2, '#eaf6fb'); const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0)));
+  for (let i = 0; i <= Math.round(n * lvl); i++) { const u = i / n; m.set(Math.round(lerp(x0, x1, u)) + ',' + Math.round(lerp(y0, y1, u)), '#e0243a'); }
+  pmEll(m, x0, y0, 1.6, 1.6, '#e0243a'); pmDraw(m);
+}
+function drawCapsule(x, y, ang) { x = Math.round(x); y = Math.round(y); const dx = Math.cos(ang) * 3, dy = Math.sin(ang) * 3, m = pmNew(); pmLine(m, x - dx, y - dy, x, y, 1.4, '#d8383a'); pmLine(m, x, y, x + dx, y + dy, 1.4, '#ffffff'); pmDraw(m); }
+function drawGlass(x, y, lvl) { x = Math.round(x); y = Math.round(y); ob(x - 3, y - 8, 7, 9, '#dff4fb', null); const h = Math.round(6 * lvl); if (h > 0) rect(x - 2, y - 1 - h, 5, h, '#58b8f0'); rect(x - 2, y - 7, 1, 4, '#ffffff'); }
+function drawMicrobe(x, y, t, ph, flash) {
+  x = Math.round(x + Math.sin(t * 6 + ph)); y = Math.round(y + Math.cos(t * 5 + ph));
+  const c1 = flash ? '#ffffff' : '#8aff3a', c2 = flash ? '#ffffff' : '#3fb81a';
+  circle(x, y, 3, K); circle(x, y, 2, c1);
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 + t * 1.5 + ph; rect(x + Math.round(Math.cos(a) * 4), y + Math.round(Math.sin(a) * 4), 1, 1, c2); }
+  rect(x - 1, y - 1, 1, 1, K); rect(x + 1, y - 1, 1, 1, K); rect(x - 1, y + 1, 3, 1, K);
+}
+function drawXray(A, T, t) {
+  const P = A.plan, stg = S.stage, sp = P.sp, px = P.PX - ANC[stg], top = P.top, two = T >= MED.X2[0];
+  rect(0, BAR, W, H - BAR, '#030b1e'); for (let x = 0; x < W; x += 8) rect(x, BAR, 1, H - BAR, '#071c44'); for (let y = BAR; y < H; y += 8) rect(0, y, W, 1, '#071c44');
+  const done = two && T >= P.maxDie + 0.1, jit = two && T > P.hit && T < P.maxDie ? Math.round(Math.sin(T * 60)) : 0;
+  blitSil(sp, px + jit, top, done ? '#2fa8d0' : '#154fb8', '#6fd8ff');
+  const bc = '#d6f4ff', cx = P.PX + jit, hy = top + Math.round(sp.h * 0.19), r = Math.max(5, Math.round(sp.w * 0.27));
+  ellO(cx, hy, r, Math.round(r * 1.05), bc); rect(cx - Math.round(r * 0.5) - 1, hy, 3, 3, bc); rect(cx + Math.round(r * 0.5) - 1, hy, 3, 3, bc); rect(cx - 2, hy + r - 2, 5, 1, bc);
+  const sy0 = hy + r + 1, sy1 = top + Math.round(sp.h * 0.8), gap = Math.max(3, Math.round(sp.h * 0.06));
+  for (let y = sy0; y < sy1; y += 3) rect(cx - 1, y, 3, 2, bc);
+  for (let k = 0; k < 4; k++) { const y = top + Math.round(sp.h * 0.4) + k * gap, rw = Math.max(4, Math.round(sp.w * 0.26) - k); line1(cx - 2, y, cx - rw, y + 2, bc); line1(cx + 2, y, cx + rw, y + 2, bc); }
+  // scansione
+  const sc0 = MED.X1[0] + 0.15, sc1 = MED.X1[0] + 1.45;
+  if (!two && T < sc1 + 0.2) { const u = easeIO(c01((T - sc0) / (sc1 - sc0))), y = Math.round(lerp(top - 4, FLOOR + 2, u)); [['#1a5ca8', 3], ['#3a9ad8', 2], ['#8fe0ff', 1], ['#ffffff', 0]].forEach(q => { if (y - q[1] >= BAR) rect(4, y - q[1], W - 8, 1, q[0]); }); }
+  // capsula che cade + onda d'urto
+  if (two) {
+    const t0 = MED.X2[0] + 0.1;
+    if (T >= t0 && T < P.hit) { const u = easeIn(c01((T - t0) / (P.hit - t0))); const y = lerp(BAR + 2, P.by, u); drawCapsule(P.PX, y, T * 9); for (let i = 1; i < 5; i++) star(P.PX + Math.sin(T * 20 + i) * 3, y - i * 5, i & 1 ? '#bff0ff' : '#ffffff', 1); }
+    if (T >= P.hit && T < P.hit + 1.0) { const rr0 = (T - P.hit) * 50, n = Math.max(20, Math.round(rr0 * 5)); for (const [c, d0] of [['#ffffff', 0], ['#7fe0ff', 3], ['#2f90d0', 6]]) { const rr1 = rr0 - d0; if (rr1 < 1) continue; for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; rect(Math.round(P.bx + Math.cos(a) * rr1), Math.round(P.by + Math.sin(a) * rr1), 1, 1, c); } } }
+  }
+  // batteri
+  let alive = 0;
+  for (const m of P.mic) {
+    const vis = two || T >= m.rev; if (!vis) continue; const age = T - m.die;
+    if (age < 0) { alive++; drawMicrobe(m.x, m.y, t, m.ph, !two && T < m.rev + 0.14); }
+    else if (age < 0.45) { const q = age / 0.45; for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + 0.8 + m.ph, rr2 = q * 9; rect(Math.round(m.x + Math.cos(a) * rr2), Math.round(m.y + Math.sin(a) * rr2), 2, 2, q < 0.5 ? '#ffffff' : '#8aff3a'); } if (q < 0.5) ellO(m.x, m.y, 2 + q * 10, 2 + q * 10, '#ffffff'); star(m.x, m.y - 6 * q, '#f7c92b', 1); }
+  }
+  plate('RAGGI X', 24, BAR + 3, '#ffffff', '#b01030', 1); if (Math.floor(t * 3) & 1) circle(8, BAR + 7, 2, '#ff3050');
+  const cl = two && T >= P.maxDie + 0.15; plate(cl ? 'BATTERI: 0  OK' : 'BATTERI: ' + alive, 78, BAR + 3, cl ? '#0f3a24' : '#ffffff', cl ? '#7ee89a' : '#14246a', 1);
+}
+function drawMedScene(A, t) {
+  const T = A.t, P = A.plan, st = S.stage, PX = P.PX, bad = isBad(st);
+  bubAnchor = PX;
+  if ((T >= MED.X1[0] && T < MED.X1[1]) || (T >= MED.X2[0] && T < MED.X2[1])) { drawXray(A, T, t); return; }
+  const cured = T >= MED.CURE, fev = c01((T - 1.6) / 1.6);
+  if (bad) { drawScene(t); medProps(st, t); } else drawInfirmary(t);
+  if (cured) drawBurst(PX, FLOOR - 30, T * 0.9, '#fffbd0', null, 9, 20 + 60 * c01((T - MED.CURE) / 0.5));
+  drawEcg(66, 16, 34, 20, t, cured ? 'ok' : 'fever');
+  let tv, tc; if (cured) { tv = '36.6'; tc = '#5bff8a'; } else if (T < 1.7) { tv = '--.-'; tc = '#6a8a7a'; } else { const v = lerp(36.4, 39.8, easeOut(c01((T - 1.7) / 1.5))); tv = v.toFixed(1); tc = (Math.floor(t * 5) & 1) && v > 38.5 ? '#ffffff' : '#ff4060'; }
+  drawTempPanel(66, 38, tv, tc);
+  // pet
+  let expr = 'sad', pose = 'down', dx = 0, dy = 0, k = 0;
+  if (T < 1.5) { dx = Math.round(Math.sin(T * 38)); k = -0.02; }
+  else if (T < MED.X1[0]) { expr = 'refuse'; dx = Math.round(Math.sin(T * 34) * (0.5 + 1.3 * fev)); k = -0.04 * fev; }
+  else if (T >= MED.PILL[0] && T < MED.PILL[1]) { if (T > 5.62 && T < 6.2) expr = (Math.floor(T * 7) & 1) ? 'eat' : 'smile'; else if (T > 6.5 && T < 6.95) expr = (Math.floor(T * 8) & 1) ? 'eat' : 'refuse'; k = T > 6.9 ? -0.1 * Math.sin((T - 6.9) / 0.2 * Math.PI) : 0; }
+  else if (cured) { const u = T - MED.CURE; expr = 'happy'; pose = 'up'; dy = -Math.round(Math.abs(Math.sin(u * 7.5)) * 9 * Math.exp(-u * 0.55)); k = u < 0.5 ? 0.18 * Math.sin(u / 0.5 * Math.PI) : 0.06 * Math.sin(u * 14) * Math.exp(-u); }
+  aniPet(st, PX, expr, pose, !cured, dx, dy, k, FLOOR, cured && T < MED.CURE + 0.28 ? '#ffffff' : null);
+  // braccio + oggetti
+  const M = { x: P.mx, y: P.my };
+  const hx = vkf(T, [[0, W + 30], [0.95, W + 30], [1.45, M.x + 13], [3.1, M.x + 13], [3.4, W + 30], [5.25, W + 30], [5.6, M.x + 10], [5.8, M.x + 4], [5.92, M.x + 10], [6.1, W + 30], [6.2, W + 30], [6.5, M.x + 9], [6.9, M.x + 9], [7.08, W + 30], [9.0, W + 30], [9.5, M.x + 24], [10.7, M.x + 24], [11.2, W + 30]]);
+  const hy = vkf(T, [[0, M.y - 10], [1.45, M.y - 3], [3.1, M.y - 3], [5.6, M.y - 1], [5.8, M.y], [6.5, M.y + 1], [6.9, M.y + 1], [9.0, M.y - 16], [9.5, M.y - 12], [11.2, M.y - 12]]);
+  if (hx < W + 4) {
+    docArm(hx, hy, bad ? { col: VENUES[st].armCol, cuff: null, glove: SKIN } : {});
+    if (T >= 1.45 && T < 3.4) drawThermo(M.x + 1, M.y, hx - 2, hy - 1, c01((T - 1.7) / 1.5));
+    if (T >= 5.3 && T < 5.88) drawCapsule(hx - 3, hy - 1, -0.4);
+    if (T >= 6.2 && T < 7.1) drawGlass(hx - 1, hy + 4 + (T > 6.62 ? -Math.round(easeOut((T - 6.62) / 0.3) * 3) : 0), T > 6.62 ? 1 - c01((T - 6.62) / 0.3) * 0.85 : 1);
+    if (T >= 9.0) { const m = pmNew(); pmRect(m, hx - 1, hy - 8, 3, 6, bad ? SKIN : '#58b8f0'); pmDraw(m); }
+  }
+  // scritte
+  const hyTop = Math.max(BAR + 3, P.top - 8);
+  if (T > 0.5 && T < 1.35) plate('COF COF!', PX, hyTop, '#ffffff', '#3a6a2a', 1);
+  if (T > 2.3 && T < 3.3 && (Math.floor(T * 8) & 1)) plate('BIP BIP BIP', PX, hyTop, '#ffffff', '#b01030', 1);
+  if (T > 3.05 && T < 3.4) plate('FEBBRE!', PX, hyTop, '#ffffff', '#b01030', 2);
+  if (T >= 6.65 && T < 7.05) plate('GLUP!', PX, hyTop, '#ffffff', '#14246a', 1);
+  if (T >= 5.55 && T < 5.95) plate('AAAH...', PX, hyTop, '#ffffff', '#14246a', 1);
+  if (cured && T > 9.3) drawCard([{ t: 'CURATO!', sc: 2, col: '#ffffff', bold: true, bounce: true }, { t: 'FEBBRE: 36.6', sc: 1, col: '#9fe8a0' }], T - 9.3, { x: 50, y: 61, w: 60, c1: '#2e9e49', c2: '#0f3a24' });
+}
+function medEvents(P) {
+  const ev = [], E = (t, f) => ev.push([t, f]), mx = P.mx, my = P.my;
+  E(0.45, () => { beep(660, 0.2, 'triangle', 0.05); beep(880, 0.2, 'triangle', 0.05, 0.22); });
+  E(0.9, () => { noise(0.18, 0.06, 900, 200, 'lowpass'); beep(130, 0.12, 'sawtooth', 0.05); if (LVL[S.stage] >= 2) petSay(pick(['Nun sto bene...', 'Cof cof... aò!', "C'ho 'a febbre..."]), 1.3); });
+  E(1.0, () => sfx('whoosh'));
+  for (let i = 0; i < 8; i++) E(1.7 + i * 0.2, () => beep(520 + i * 70, 0.06, 'square', 0.03));
+  E(3.2, () => { for (let i = 0; i < 3; i++) beep(1568, 0.09, 'square', 0.05, i * 0.12); fxShake(3.5); fxStop(0.07); flash = 0.3; });
+  E(3.4, () => { sfx('riser2'); flash = 0.9; sfx('whoosh'); });
+  P.mic.forEach(m => E(m.rev, () => beep(1200 + m.ph * 90, 0.05, 'triangle', 0.04)));
+  E(5.3, () => { flash = 0.7; sfx('whoosh'); });
+  E(5.8, () => { sfx('cap'); fxStars(mx + 4, my, 5, 20); });
+  E(6.2, () => sfx('whoosh'));
+  E(6.5, () => sfx('clink'));
+  E(6.62, () => sfx('slurp'));
+  E(6.9, () => { beep(150, 0.1, 'sine', 0.08); sweep(300, 90, 0.2, 'sine', 0.06, 0.05); });
+  E(7.1, () => { flash = 0.8; sfx('riser'); });
+  E(P.hit, () => { sfx('chime'); noise(0.3, 0.06, 3000, 500, 'bandpass'); fxShake(3); fxStop(0.06); });
+  P.mic.forEach((m, i) => E(m.die, () => { beep(880 + i * 110, 0.09, 'square', 0.045); sfx('pop'); }));
+  E(P.maxDie + 0.1, () => { sfx('powerup'); fxStop(0.08); });
+  E(MED.CURE, () => { S.sick = false; S.sickT = 0; flash = 1; fxStop(0.15); fxShake(7); sfx('boom'); sfx('fanfare'); fxRing(P.PX, FLOOR - 30, '#ffffff', 2, 130, 0.7, { w: 2 }); fxRing(P.PX, FLOOR - 30, '#5bd66b', 2, 90, 0.8); fxConfetti(P.PX, FLOOR - 36, 70, 1.3); fxStars(P.PX, FLOOR - 36, 14, 70); });
+  E(MED.CURE + 0.5, () => { if (LVL[S.stage] >= 2) petSay(pick(['Me sento mejo!', "So' guarito, aò!", 'Che sollievo!']), 1.9); });
+  E(9.4, () => sfx('chime'));
+  for (let i = 0; i < 7; i++) E(0.6 + i * 0.45, () => beep(1000, 0.03, 'square', 0.018));
+  for (let i = 0; i < 4; i++) E(5.3 + i * 0.45, () => beep(1000, 0.03, 'square', 0.018));
+  for (let i = 0; i < 5; i++) E(9.0 + i * 0.7, () => { beep(130, 0.06, 'sine', 0.07); beep(105, 0.08, 'sine', 0.06, 0.12); });
+  return ev.sort((a, b) => a[0] - b[0]);
+}
+function startMed() {
+  fxClear(); bub = null; PET.moving = false; PET.v = 0; PET.settle = false; PET.wcGo = false; sel = -1;
+  const P = medPlan(S.stage);
+  setAnim('med', MED.dur, () => { S.sick = false; S.sickT = 0; PET.wait = 1.2; save(); }, { plan: P, ev: medEvents(P) });
+  sfx('click');
+}
+function drawMedAnim(A, t) {
+  const T = A.t, bad = isBad(S.stage);
+  if (T >= 0.4 && T < A.dur - 0.4) drawMedScene(A, t); else { drawScene(t); drawWorld(t, true); }
+  fxDrawParts(); drawBubble();
+  drawCrossWipe(coverFrac(A), bad ? DEN_CHECK[S.stage][0] : '#d8383a', bad ? DEN_CHECK[S.stage][1] : '#ffffff');
+}
+
+/* ============================================================================
+   SGRIDATA: il dito del Comandante
+   ============================================================================ */
+const cxHit = () => 58;
+function scoldEvents(ok, top) {
+  const ev = [], E = (t, f) => ev.push([t, f]);
+  E(0.15, () => sweep(220, 70, 0.6, 'sawtooth', 0.05));
+  E(0.6, () => sfx('whoosh'));
+  E(1.28, () => { sfx('slam'); fxShake(5); fxStop(0.08); fxRing(cxHit(), top + 6, '#ff4060', 2, 46, 0.45, { w: 2 }); });
+  [1.55, 2.45, 3.35, 4.2].forEach(tt => E(tt, () => { sfx('scold'); fxShake(4); fxStop(0.04); fxRing(56, top + 8, '#ffffff', 2, 40, 0.35); }));
+  if (ok) {
+    E(4.9, () => { sfx('thunder'); flash = 0.7; fxShake(6); fxStop(0.08); });
+    E(5.15, () => sfx('sparkle'));
+    E(5.65, () => { fxStars(44, Math.max(BAR + 10, top - 6), 14, 60); sfx('chime'); });
+    E(5.7, () => sfx('whoosh'));
+    E(6.0, () => { sfx('tada'); fxConfetti(56, FLOOR - 30, 40, 1.2); });
+    E(6.2, () => sfx('powerup'));
+  } else {
+    E(4.9, () => { sfx('boom'); fxShake(6); fxStop(0.1); flash = 0.4; });
+    E(5.1, () => { sfx('hurt'); fxBurst(60, top + 6, 12, { v0: 20, v1: 70, shape: 'star', cols: ['#ffffff', '#ff4060'], l0: 0.4, l1: 0.8 }); });
+    E(5.5, () => sfx('sob'));
+    E(6.0, () => sfx('sob'));
+  }
+  return ev.sort((a, b) => a[0] - b[0]);
+}
+function startScoldAnim(ok) {
+  fxClear(); bub = null; PET.moving = false; PET.v = 0; PET.settle = false; sel = -1;
+  const st = S.stage, top = FLOOR - getSprite(st, 'sad', 'down', S.sick).h;
+  setAnim('scold', ok ? 8.2 : 7.4, () => { PET.x = 44; PET.wait = 1.0; speak(ok ? 'scold' : 'scoldWrong', true); save(); }, { ok, x0: PET.x, ev: scoldEvents(ok, top) });
+}
+function scoldHand(A, T, cx, top) {
+  const L = 37, D0 = 82, ok = A.ok, a0 = D0 * Math.PI / 180;
+  const rest = [cx + 13, top + 16], piv = [rest[0] + L * Math.sin(a0), rest[1] - L * Math.cos(a0)];
+  const tipAt = deg => { const a = deg * Math.PI / 180; return [piv[0] - L * Math.sin(a), piv[1] + L * Math.cos(a)]; };
+  if (T < 0.5) return null;
+  if (T < 1.3) { const e = easeOut((T - 0.5) / 0.8); return { tx: rest[0] + lerp(64, 0, e), ty: rest[1] - lerp(12, 0, e), deg: lerp(104, D0, e) }; }
+  if (T < 4.9) { const w = Math.sin((T - 1.3) * 8.5), q = tipAt(D0 + w * 13); return { tx: q[0], ty: q[1], deg: D0 + w * 13 }; }
+  if (ok) {
+    const cy = Math.max(BAR + 10, top - 6), tg = [cx + 15, cy + 6];
+    if (T < 5.15) { const e = easeOut((T - 4.9) / 0.25); return { tx: lerp(rest[0], tg[0], e), ty: lerp(rest[1], tg[1], e), deg: lerp(D0, 66, e) }; }
+    if (T < 5.7) return { tx: tg[0], ty: tg[1], deg: 66 };
+    const e = easeIn(c01((T - 5.7) / 0.7)); return { tx: tg[0] + e * 64, ty: tg[1] - e * 8, deg: 66 + e * 36 };
+  }
+  if (T < 5.1) { const e = easeOut((T - 4.9) / 0.2); return { tx: lerp(rest[0], cx + 7, e), ty: rest[1], deg: D0 }; }
+  if (T < 5.45) { const e = easeOut((T - 5.1) / 0.35); return { tx: lerp(cx + 7, rest[0] + 16, e), ty: lerp(rest[1], rest[1] - 12, e), deg: D0 + e * 22 }; }
+  const e = easeIn(c01((T - 5.45) / 1.0)); return { tx: rest[0] + 16 + e * 56, ty: rest[1] - 12 - e * 6, deg: D0 + 22 + e * 16 };
+}
+function drawRainbow(cx, cy, R0, u) {
+  const cols = ['#d8383a', '#f59a3a', '#f7c92b', '#5bd66b', '#58b8f0', '#2b62c4', '#9457e6'];
+  for (let b = 0; b < cols.length; b++) { const r = R0 + (cols.length - b) * 2; for (let x = cx - r; x <= cx + r; x++) { if ((x - (cx - R0 - 16)) > u * (2 * R0 + 32)) break; const dy = Math.sqrt(r * r - (x - cx) * (x - cx)); if (isNaN(dy)) continue; rect(x, Math.round(cy - dy), 1, 2, cols[b]); } }
+}
+function drawScold(A, t) {
+  const T = A.t, st = S.stage, ok = A.ok, top = FLOOR - getSprite(st, 'sad', 'down', S.sick).h;
+  const cx = Math.round(lerp(A.x0, 44, easeOut(c01(T / 0.6)))), dk = T < 0.5 ? T / 0.5 : (T > A.dur - 0.7 ? c01((A.dur - T) / 0.7) : 1);
+  bubAnchor = cx; drawScene(t);
+  ctx.globalAlpha = 0.62 * dk; rect(0, BAR, W, H - BAR, '#0b0618'); ctx.globalAlpha = 1;
+  ctx.globalAlpha = 0.2 * dk; for (let y = BAR; y < FLOOR; y++) { const hw = 7 + (y - BAR) * 0.4; rect(cx - hw, y, hw * 2, 1, '#fff3b0'); } ctx.globalAlpha = 0.45 * dk; ell(cx, FLOOR, 24, 3, '#fff3b0'); ctx.globalAlpha = 1;
+  // esito positivo: arcobaleno + sole
+  if (ok && T > 5.2) { drawRainbow(56, 78, 38, c01((T - 5.2) / 1.0)); const sc = c01((T - 5.4) / 0.4); if (sc > 0) { oc(100, 26, Math.round(7 * sc), '#ffe27a', '#f7c92b'); for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 + t * 0.6; rect(100 + Math.round(Math.cos(a) * 11 * sc), 26 + Math.round(Math.sin(a) * 11 * sc), 2, 2, '#ffe27a'); } } }
+  // nuvola temporalesca (capriccio vero)
+  if (ok && T < 5.8) {
+    const cy = Math.max(BAR + 10, top - 6), zap = T >= 4.9, white = zap && T < 5.15, sc = zap ? (T < 5.15 ? 1 : Math.max(0, 1 - (T - 5.15) / 0.5)) : 1 + 0.06 * Math.sin(T * 5);
+    if (sc > 0.02) { drawStormCloud(cx, cy, sc, t, white); if (!zap && (Math.floor(T * 5) % 3 === 0)) boltAt(cx - 4 + Math.round(Math.sin(T * 9) * 6), cy + 6, Math.min(top + 6, cy + 30), Math.floor(T * 5));
+      if (!zap) for (let i = 0; i < 12; i++) { const rx = cx - 12 + ((i * 7) % 24), ry = cy + 8 + ((T * 70 + i * 13) % 34); if (ry < top + 14) rect(rx, Math.round(ry), 1, 3, '#7fcdf0'); } }
+    if (T >= 4.95 && T < 5.2) boltAt(cx, cy + 6, cy + 6, 3);
+  }
+  // pet
+  let expr = 'sad', k = 0, dx = 0, dy = 0;
+  if (T < 1.3) { expr = ok ? 'refuse' : 'normal'; dx = ok ? Math.round(Math.sin(T * 25)) : 0; k = 0.02; }
+  else if (T < 4.9) { expr = 'sad'; k = -0.12 + 0.04 * Math.sin(T * 12); dx = Math.round(Math.sin(T * 28) * 0.8); }
+  else if (ok) { expr = T < 5.9 ? 'sad' : 'smile'; k = T < 5.9 ? -0.08 : (T < 6.6 ? -0.28 * Math.sin((T - 5.9) / 0.7 * Math.PI) : 0); dy = T > 6.8 && T < 7.3 ? -Math.round(Math.sin((T - 6.8) / 0.5 * Math.PI) * 6) : 0; }
+  else { expr = 'sad'; k = T < 5.1 ? -0.3 : (T < 6.2 ? -0.1 + 0.05 * Math.sin(T * 18) : -0.06); dx = T > 5.1 && T < 6.2 ? Math.round(Math.sin(T * 40) * 1.2) : 0; }
+  aniPet(st, cx, expr, 'down', S.sick, dx, dy, k, FLOOR);
+  // mano
+  const hd = scoldHand(A, T, cx, top); if (hd) drawHandTip('big', Math.round(hd.tx), Math.round(hd.ty), hd.deg);
+  // parole urlate
+  // esito
+  if (ok && T > 5.6) { buildRS(); const q = easeBack(c01((T - 5.7) / 0.5)), sz = Math.round(22 * Math.min(1.2, q)); if (sz > 0) { ctx.drawImage(toCanvas(RS.starF), 0, 0, 11, 10, 86 + Math.round((22 - sz) / 2), 50 + Math.round((20 - sz * 0.9) / 2), sz, Math.round(sz * 0.9)); } if (T > 5.9) plate('DISCIPLINA +', 78, 74, '#ffffff', '#2e7a3a', 1); }
+  if (!ok && T > 5.15) {
+    if (T < 5.35 && (Math.floor(T * 40) & 1)) { for (let i = -1; i <= 1; i++) { line1(20 + i, BAR + 8, 92 + i, 76, '#ff2a3a'); line1(92 + i, BAR + 8, 20 + i, 76, '#ff2a3a'); } }
+    if (T > 5.45) { const u = T - 5.45, hx = cx + 24, hy = 30 + u * u * 34, sp = ICONS.heart, cv2 = toCanvas(sp); if (hy < FLOOR + 6) { ctx.drawImage(cv2, 0, 0, 4, 7, Math.round(hx - 2 - u * 6), Math.round(hy), 8, 14); ctx.drawImage(cv2, 4, 0, 3, 7, Math.round(hx + 8 + u * 6), Math.round(hy + 2), 6, 14); } if (T > 5.7 && T < 7.0) plate('-1', cx + 26, 20, '#ffffff', '#7a1a24', 1); }
+  }
+  drawLetterbox(c01(T / 0.5) * dk);
+  [[1.55, 'NO!', 3], [2.45, 'BASTA!', 3], [3.35, ok ? 'CAPRICCI!' : 'CHE FAI?!', 2], [4.2, 'MAI PIÙ!', 3]].forEach(w => {
+    const p = T - w[0]; if (p < 0 || p > 0.75) return; const sh = p < 0.3 ? Math.round(Math.sin(p * 90) * 2) : 0, sc = p < 0.08 ? w[2] + 1 : w[2];
+    plate(w[1], 56 + sh, BAR + 11, '#ffffff', '#a01030', sc, '#ff4060');
+  });
+  if (!ok && T > 5.3 && T < 6.9) plate('INGIUSTO!', 56, BAR + 11, '#ffffff', '#7a1a24', 2, '#ff4060');
+}
+/* ============================================================================
+   COCCOLE: la tua mano accarezza il pet
+   ============================================================================ */
+let lastPetAnim = -1e9;
+function petEvents() {
+  const ev = [], E = (t, f) => ev.push([t, f]);
+  E(0.2, () => sfx('whoosh'));
+  for (let i = 0; i < 20; i++) E(0.75 + i * 0.14, () => beep(72 + Math.random() * 18, 0.12, 'sawtooth', 0.02));
+  E(0.9, () => { sfx('sparkle'); fxShake(1); });
+  E(1.6, () => sfx('cap'));
+  E(2.5, () => sfx('sparkle'));
+  E(3.45, () => { sfx('chime'); sfx('yum'); });
+  return ev;
+}
+function startPetAnim() {
+  fxClear(); bub = null; PET.moving = false; PET.v = 0; PET.settle = false; PET.pend = 0; PET.jy = 0; PET.jv = 0; SQ.x = 0; SQ.v = 0; lastPetAnim = nowMs();
+  setAnim('pet', 4.6, () => { PET.wait = 1.0; speak('poke', true); }, { x0: PET.x, ev: petEvents() });
+}
+function drawPetAnim(A, t) {
+  const T = A.t, st = S.stage, x0 = A.x0, sp0 = getSprite(st, 'happy', 'down', S.sick), top = FLOOR - sp0.h; bubAnchor = x0;
+  drawScene(t);
+  const stroke = T > 0.6 && T < 3.4, press = stroke ? 1 + Math.sin(T * 9) * 1.2 : 0;
+  let expr = T < 0.5 ? 'normal' : (T < 3.6 ? 'happy' : 'smile'), k = stroke ? -0.1 + 0.03 * Math.sin(T * 9) : (T > 3.4 && T < 3.9 ? 0.15 * Math.sin((T - 3.4) / 0.5 * Math.PI) : 0), dx = stroke ? Math.round(Math.sin(T * 38) * 0.7) : 0, dy = 0;
+  if (T > 3.5 && T < 4.1) dy = -Math.round(Math.abs(Math.sin((T - 3.5) / 0.6 * Math.PI)) * 6);
+  const pose = (T > 3.5 && T < 4.1) ? 'up' : 'down';
+  aniPet(st, x0, expr, pose, S.sick, dx, dy, k, FLOOR);
+  // mano: arriva da destra e accarezza la testa di lato
+  if (T > 0.1 && T < 4.4) {
+    let tx, ty, deg;
+    if (T < 0.6) { const e = easeOut((T - 0.1) / 0.5); tx = x0 + 5 + lerp(50, 0, e); ty = top + 14 - lerp(14, 0, e); deg = lerp(104, 76, e); }
+    else if (T < 3.4) { tx = x0 + 1 + Math.sin((T - 0.6) * 9) * 9; ty = top + 13 + press * 0.8; deg = 76 + Math.cos((T - 0.6) * 9) * 7; }
+    else { const e = easeIn(c01((T - 3.4) / 0.8)); tx = x0 + 1 + e * 56; ty = top + 13 - e * 12; deg = 76 + e * 28; }
+    drawHandTip('pat', Math.round(tx), Math.round(ty), deg);
+  }
+  // cuore grande
+  if (T > 3.5 && T < 4.6) { const p = T - 3.5, q = easeBack(c01(p / 0.4)); ICONS.heart && blit(ICONS.heart, Math.round(x0 - 7 * q), Math.round(top - 16 - p * 6), { scale: 2 }); }
+  drawLetterbox(0);
+}
+/* ============================================================================
+   RIFIUTO: il cibo che non va (pieno / capriccio)
+   ============================================================================ */
+function refuseEvents(kind, why) {
+  const ev = [], E = (t, f) => ev.push([t, f]);
+  E(0.05, () => sfx('whoosh'));
+  E(0.45, () => { sfx('no'); if (LVL[S.stage] >= 2) petSay(why === 'full' ? pick(["So' pieno, aò!", 'Nun ce la faccio!']) : pick(['Nun vojo, nun vojo!', 'Uffa! No!']), 1.6); });
+  [0.7, 1.05, 1.4].forEach(tt => E(tt, () => beep(260, 0.06, 'square', 0.03)));
+  if (why === 'full') { E(2.0, () => { noise(0.35, 0.07, 300, 120, 'lowpass'); sweep(140, 70, 0.35, 'sawtooth', 0.05); fxShake(2); }); E(2.4, () => sfx('whoosh')); }
+  else { E(1.55, () => { sfx('slam'); fxShake(4); fxStop(0.06); }); E(2.2, () => { sfx('crash'); fxShake(3); fxBurst(14, FLOOR - 6, 14, { v0: 20, v1: 70, g: 180, cols: kind === 0 ? ['#f6dd8e', '#d9b150', '#ffffff'] : ['#e8a23a', '#fff0c0', '#ffffff'], l0: 0.5, l1: 1.0, flat: 0.9, s: 2 }); }); }
+  return ev;
+}
+function startRefuse(kind, why) {
+  fxClear(); bub = null; PET.moving = false; PET.v = 0; PET.settle = false; sel = -1;
+  setAnim('refuse', 3.3, () => { PET.wait = 1.0; }, { kind, why, x0: PET.x, ev: refuseEvents(kind, why) });
+}
+function drawRefuse(A, t) {
+  const T = A.t, st = S.stage, x0 = A.x0, tant = A.why === 'tantrum', full = !tant, sp0 = getSprite(st, 'refuse', 'down', S.sick), top = FLOOR - sp0.h, my = top + PG[st].mr; bubAnchor = x0;
+  drawScene(t);
+  if (tant) drawStormCloud(x0, Math.max(BAR + 8, top - 6), 0.8, t, false);
+  // pet: scuote la testa
+  if (T < 0.5 || T > 2.5 + (full ? 0.5 : 0)) aniPet(st, x0, T > 2.7 ? 'normal' : 'refuse', 'down', S.sick, 0, 0, 0, FLOOR);
+  else if (full && T > 1.9 && T < 2.5) { const bu = Math.sin((T - 1.9) / 0.6 * Math.PI); aniPet(st, x0, 'eat', 'down', S.sick, 0, 0, 0.14 * bu, FLOOR); }
+  else { const dir = (Math.floor((T - 0.5) / 0.17) & 1) ? -1 : 1, ws = getWalkSprite(st, 'refuse', 2, S.sick, dir), jump = tant ? -Math.round(Math.abs(Math.sin(T * 14)) * 4) : 0; ctx.globalAlpha = 0.28; rect(Math.round(x0 - 9), FLOOR, 18, 2, '#000'); ctx.globalAlpha = 1; blit(ws, Math.round(x0 - WALK[st].anc), FLOOR - ws.h + jump); }
+  // braccio + cibo
+  const hx = vkf(T, [[0, W + 30], [0.1, W + 30], [0.55, x0 + 26], [tant ? 1.5 : 2.2, x0 + 26], [tant ? 1.62 : 2.75, tant ? x0 + 14 : W + 30], [3.1, W + 30]]), hy = my + 4 + (T > 0.6 && T < 1.5 ? Math.round(Math.sin(T * 16) * 1.2) : 0);
+  let fx2 = hx - 4, fy2 = hy - 9, vis = true, ang = 0;
+  if (tant && T >= 1.5) { const u = T - 1.5, e = u / 0.7; fx2 = x0 + 22 - e * (x0 + 14); fy2 = hy - 9 - Math.sin(Math.min(1, e) * Math.PI) * 22 + e * e * 40; vis = e < 1; }
+  if (hx < W + 4) docArm(hx, hy, { col: '#f4f8fa', cuff: null, glove: SKIN });
+  if (vis) { const spr = ICONS[A.kind === 0 ? 'foodL' : 'snackL']; blit(spr, Math.round(fx2 - 6), Math.round(fy2), { scale: 2 }); if (T < 1.5 || !tant) drawSteam(Math.round(fx2 + 8), Math.round(fy2), T, 0.8); }
+  // scritte
+  if (T > 0.55 && T < 1.75) { const sh = Math.round(Math.sin(T * 50) * 1); plate('NO!', Math.min(W - 14, x0 + 22) + sh, Math.max(BAR + 3, top - 4), '#ffffff', '#a01030', 2, '#ff4060'); }
+  if (full && T > 1.2 && T < 2.0) plate('SONO PIENO!', x0, Math.max(BAR + 20, top + 6), '#ffffff', '#14246a', 1);
+  if (full && T > 2.0 && T < 2.8) { const p = (T - 2.0) / 0.8; plate('BUUURP!', Math.min(W - 24, x0 + 18), Math.max(BAR + 3, my - 12 - p * 8), '#0f3a24', '#7ee89a', 1); for (let i = 0; i < 4; i++) circle(Math.round(x0 + 5 + p * 14 + i * 3), Math.round(my - p * 8 - i), 3 - (i >> 1), i & 1 ? '#a8d44a' : '#7aae2c'); }
+  if (tant && T > 1.7 && T < 2.9) plate(T > 2.2 ? 'CRASH!' : 'NUN VOJO!', 56, BAR + 3, '#ffffff', T > 2.2 ? '#7a1a24' : '#14246a', 2);
+}
+/* ============================================================================
+   VITTORIA / SCONFITTA a Genova
+   ============================================================================ */
+const PODS = [{ x: 14, w: 28, h: 6, n: '2', c: '#cfd8de', c2: '#8d99a3' }, { x: 42, w: 28, h: 10, n: '1', c: '#f7c92b', c2: '#c99a14' }, { x: 70, w: 28, h: 4, n: '3', c: '#c97a3a', c2: '#8a4a1a' }];
+function winEvents(stars, tot) {
+  const ev = [], E = (t, f) => ev.push([t, f]);
+  if (stars > 0) {
+    E(0.3, () => sfx('riser'));
+    E(1.2, () => { sfx('fanfare'); flash = 0.6; fxShake(5); fxStop(0.08); cannon(6, 1); cannon(106, -1); fxFirework(30, 26, ['#d8383a', '#ffffff']); });
+    E(1.6, () => fxFirework(86, 24, ['#2b62c4', '#7fdcff']));
+    E(1.95, () => fxFirework(56, 18, ['#f7c92b', '#ffffff']));
+    E(1.8, () => sfx('whoosh'));
+    E(2.7, () => { sfx('chime'); fxShake(2); });
+    [2.5, 2.8, 3.1].forEach((tt, i) => { if (i < stars) E(tt, () => sfx('sparkle')); });
+    E(3.7, () => { sfx('tada'); if (LVL[S.stage] >= 2) petSay(pick(['Evvai, ho vinto!', "So' 'n campione!", 'Sul podio, aò!']), 1.9); });
+    E(4.2, () => { cannon(6, 1); cannon(106, -1); fxFirework(22, 34, ['#5bd66b', '#ffffff']); });
+    E(4.6, () => fxFirework(92, 30, ['#f59ab5', '#ffffff']));
+    E(5.0, () => fxFirework(56, 22, ['#d8383a', '#f7c92b']));
+  } else {
+    E(0.2, () => sfx('lose'));
+    E(1.0, () => { sfx('thunder'); flash = 0.4; fxShake(3); });
+    E(1.4, () => { if (LVL[S.stage] >= 2) petSay(pick(['Uffa... riprovamo!', 'Nun è finita, aò!']), 1.8); });
+    E(2.4, () => sfx('chime'));
+  }
+  return ev.sort((a, b) => a[0] - b[0]);
+}
+function cannon(x, dir) { for (let i = 0; i < 28; i++) fxAdd({ x, y: 72, vx: dir * rnd(25, 80), vy: -rnd(70, 150), g: 150, drag: 0.6, life: rnd(1.4, 2.6), c: pick(CONF), c2: pick(CONF), shape: 'conf', s: 2, rot: rnd(0, 6.28), spin: rnd(6, 15) }); }
+function startWin(stars, g) {
+  fxClear(); bub = null; PET.moving = false; PET.v = 0; PET.settle = false; sel = -1; buildRS();
+  setAnim('win', stars > 0 ? 6.6 : 3.8, () => { PET.x = 56; PET.wait = 1.0; save(); }, { stars, score: g ? g.score : 0, coins: g ? g.coins : 0, ev: winEvents(stars) });
+}
+function drawMedal(x, y, kind, t) {
+  const cols = [['#c97a3a', '#8a4a1a'], ['#cfd8de', '#8d99a3'], ['#f7c92b', '#c99a14']][kind];
+  for (let o = 0; o < 3; o++) { line1(x - 9 + o, BAR, x - 1 + o, y - 5, '#2b62c4'); line1(x + 9 - o, BAR, x + 1 - o, y - 5, '#d8383a'); }
+  oc(x, y, 6, cols[0], cols[1]); circle(x, y, 3, cols[1]); star(x, y, '#ffffff', 2); if (Math.floor(t * 7) % 5 === 0) star(x + 5, y - 5, '#ffffff', 1);
+}
+function drawWin(A, t) {
+  const T = A.t, st = S.stage, win = A.stars > 0, stars = A.stars;
+  drawRunBG(t, 650, 0);
+  if (!win) {
+    ctx.globalAlpha = 0.34; rect(0, BAR, W, H - BAR, '#101830'); ctx.globalAlpha = 1;
+    for (let i = 0; i < 46; i++) { const rx = (i * 17 + T * 12) % (W + 6), ry = BAR + ((T * 80 + i * 29) % (H - BAR)); rect(Math.round(rx), Math.round(ry), 1, 3, '#9fd0f0'); }
+    const sp0 = getSprite(st, 'sad', 'down', S.sick), x = 56, k = -0.05 - 0.08 * Math.min(1, T / 1.0) + 0.02 * Math.sin(T * 3), py = FLOOR - sp0.h;
+    aniPet(st, x, 'sad', 'down', S.sick, Math.round(Math.sin(T * 18) * (T < 1.2 ? 1 : 0)), 0, k, FLOOR);
+    drawStormCloud(x, Math.max(BAR + 8, py - 8), 0.9, t, false);
+    bubAnchor = x; if (T > 0.4 && T < 3.6) plate(T < 2.2 ? 'AHIA...' : 'RIPROVA!', 88, 40, '#ffffff', T < 2.2 ? '#14246a' : '#b01030', 1);
+    if (T > 2.4) { const sc = c01((T - 2.4) / 0.4); oc(98, 24, Math.round(6 * sc), '#ffe27a', '#f7c92b'); }
+    return;
+  }
+  // podio
+  const stand = stars >= 3 ? 1 : (stars === 2 ? 0 : 2), pod = PODS[stand], x = pod.x + pod.w / 2, feet = 88 - pod.h;
+  PODS.forEach(p => { rect(p.x - 1, 88 - p.h - 1, p.w + 2, p.h + 3, K); rect(p.x, 88 - p.h, p.w, p.h + 2, p.c); rect(p.x, 88 - p.h, p.w, 1, '#ffffff'); rect(p.x + p.w - 4, 89 - p.h, 4, p.h, p.c2); text(p.n, p.x + p.w / 2, 90 - p.h, K, 'c'); });
+  // striscione e gagliardetti
+  ob(14, 14, 84, 11, '#2b62c4', '#1b3f8a'); textO('GENOVA', 56, 17, '#ffffff', 'c', 1, '#14246a'); for (let xx = 16; xx < 96; xx += 8) pennant(xx, 26 + Math.round(Math.sin(t * 4 + xx) * 1), ['#d8383a', '#f7c92b', '#ffffff'][((xx - 16) / 8) % 3]);
+  // cannoni
+  for (const [cx2, dr] of [[6, 1], [106, -1]]) { const m = pmNew(); pmLine(m, cx2 - dr * 4, 83, cx2 + dr * 3, 73, 3.4, '#4a4a52'); pmEll(m, cx2 - dr * 5, 84, 4.2, 4.2, '#2a2a30'); pmRect(m, cx2 + dr * 2 - 1, 72, 3, 3, '#d8383a'); pmDraw(m); }
+  // pet
+  const sp0 = getSprite(st, 'happy', 'up', false); let expr = 'normal', pose = 'down', dy = 0, k = 0;
+  if (T >= 1.2) { expr = 'happy'; pose = 'up'; const u = T - 1.2; dy = -Math.round(Math.abs(Math.sin(u * 6)) * 7 * Math.exp(-u * 0.5)); k = u < 0.4 ? 0.18 * Math.sin(u / 0.4 * Math.PI) : 0.04 * Math.sin(u * 12) * Math.exp(-u); }
+  else { k = 0.02 * Math.sin(T * 14); }
+  const pp = aniPet(st, x, expr, pose, S.sick, 0, dy, k, feet);
+  if (T >= 1.8) drawMedal(Math.round(x), Math.round(lerp(BAR - 4, feet - sp0.h * 0.46 + dy, easeBack(c01((T - 1.8) / 0.9)))), stars >= 3 ? 2 : (stars === 2 ? 1 : 0), t);
+  // stelle e punteggio sul lato libero dello schermo
+  const tx = x <= 56 ? 88 : 24;
+  for (let i = 0; i < 3; i++) { const q = c01((T - 2.4 - i * 0.3) / 0.25); if (q <= 0) continue; const on = i < stars, s2 = on ? Math.min(1.5, easeBack(q)) : 1, w2 = Math.round(11 * s2), h2 = Math.round(10 * s2); ctx.drawImage(toCanvas(on ? RS.starF : RS.starE), 0, 0, 11, 10, tx - 18 + i * 13 + Math.round((11 - w2) / 2), 34 + Math.round((10 - h2) / 2), w2, h2); }
+  const word = stars >= 3 ? 'ORO!' : (stars === 2 ? 'ARGENTO' : 'BRONZO');
+  if (T > 3.7) plate(word, tx, 49, '#ffffff', stars >= 3 ? '#8a6a00' : (stars === 2 ? '#4a5560' : '#6a3a10'), word.length <= 5 ? 2 : 1, '#ffffff');
+  if (T > 4.1) plate('PUNTI ' + A.score, tx, 66, '#f7c92b', '#14246a', 1);
+  bubAnchor = x;
+}
+function drawAni(A, t) {
+  if (A.type === 'scold') drawScold(A, t); else if (A.type === 'pet') drawPetAnim(A, t); else if (A.type === 'refuse') drawRefuse(A, t); else if (A.type === 'win') drawWin(A, t);
+}
+/* ---------- particelle continue delle nuove animazioni ---------- */
+function aniFx(dt) {
+  const a = anim; if (!a) return; const T = a.t, st = S.stage;
+  if (a.type === 'med') {
+    const P = a.plan;
+    if (T > 0.5 && T < MED.X1[0]) {
+      if (Math.random() < dt * 5) fxAdd({ x: P.PX + rnd(-10, 10), y: P.top + 6, vx: rnd(-6, 6), vy: -rnd(4, 10), g: 90, life: 0.8, c: '#58b8f0', shape: 'drop', fade: false });
+      if (T > 2.3 && Math.random() < dt * 9) fxAdd({ x: P.PX + rnd(-8, 8), y: P.top, vx: rnd(-4, 4), vy: -rnd(14, 26), g: -4, drag: 0.5, life: 0.9, c: '#f4f8fa', shape: 'puff', s: 1.6 });
+    }
+    if (T >= MED.CURE && T < MED.CURE + 2.4 && Math.random() < dt * 14) { fxAdd({ x: P.PX + rnd(-14, 14), y: FLOOR - rnd(10, 60), vx: rnd(-6, 6), vy: -rnd(12, 28), life: 1.0, c: '#5bd66b', shape: 'plus' }); if (Math.random() < 0.3) fxAdd({ x: P.PX + rnd(-14, 14), y: FLOOR - rnd(20, 60), vx: rnd(-6, 6), vy: -rnd(14, 24), life: 1.2, shape: 'heart' }); }
+  } else if (a.type === 'scold') {
+    const sp = getSprite(st, 'sad', 'down', S.sick), ey = FLOOR - sp.h + PG[st].er + 3, cx = lerp(a.x0, 44, easeOut(c01(T / 0.6)));
+    if (T > 1.3 && T < a.dur - 1.0 && Math.random() < dt * (a.ok ? 10 : 16)) { const side = Math.random() < 0.5 ? 0 : 1; fxAdd({ x: cx + EYX[st][side], y: ey, vx: (side ? 1 : -1) * rnd(4, 16), vy: -rnd(6, 22), g: 160, life: 0.9, c: '#58b8f0', shape: 'drop', fade: false }); }
+  } else if (a.type === 'pet') {
+    const sp = getSprite(st, 'happy', 'down', S.sick), top = FLOOR - sp.h;
+    if (T > 0.9 && T < 3.5 && Math.random() < dt * 6) fxAdd({ x: a.x0 + rnd(-12, 12), y: top - 2, vx: rnd(-6, 6), vy: -rnd(14, 26), life: 1.3, shape: 'heart' });
+    if (T > 1.0 && T < 3.4 && Math.random() < dt * 3) fxAdd({ x: a.x0 + rnd(-14, 14), y: top + rnd(0, 20), vx: rnd(-8, 8), vy: -rnd(10, 20), life: 1.1, shape: 'note' });
+  } else if (a.type === 'refuse') {
+    const sp = getSprite(st, 'refuse', 'down', S.sick), top = FLOOR - sp.h;
+    if (T > 0.6 && T < 2.0 && Math.random() < dt * 8) fxAdd({ x: a.x0 + rnd(-10, 10), y: top + 4, vx: rnd(-10, 10), vy: -rnd(6, 16), g: 120, life: 0.7, c: '#58b8f0', shape: 'drop', fade: false });
+  } else if (a.type === 'win' && a.stars > 0) {
+    if (T > 1.2 && Math.random() < dt * 6) fxAdd({ x: rnd(8, 104), y: BAR + 2, vx: rnd(-8, 8), vy: rnd(20, 40), g: 20, life: rnd(1.2, 2.2), c: pick(CONF), c2: pick(CONF), shape: 'conf', s: 2, rot: rnd(0, 6.28), spin: rnd(6, 15) });
+  }
+}
+const ANIMS = [
+  ['CURA', () => { S.sick = true; startMed(); }], ['SGRIDA GIUSTA', () => startScoldAnim(true)], ['SGRIDA INGIUSTA', () => startScoldAnim(false)], ['COCCOLE', () => startPetAnim()],
+  ['RIFIUTA: PIENO', () => startRefuse(0, 'full')], ['RIFIUTA: CAPRICCIO', () => startRefuse(1, 'tantrum')],
+  ['VITTORIA ORO', () => startWin(3, { score: 2450, coins: 48 })], ['VITTORIA ARGENTO', () => startWin(2, { score: 1620, coins: 31 })], ['VITTORIA BRONZO', () => startWin(1, { score: 860, coins: 14 })], ['SCONFITTA', () => startWin(0, { score: 0, coins: 0 })]
+];
+function aniRun(i) { ANIMS[i][1](); }
+
+/* ============================================================================
+   SALVATAGGIO: ESPORTA / IMPORTA su file (.json) + copia di sicurezza + promemoria.
+   Il tasto SALVA sta nella fila di SUONO / DEBUG / NUOVA e apre un menu nello schermo LCD.
+   File = { game, format, version, exported, summary, sum (FNV-1a), data: { s: stato, a: album } }.
+   L'import controlla: JSON valido, gioco giusto, codice di controllo, stadio valido; poi chiede conferma,
+   salva una COPIA del pet attuale nel browser e carica quello nuovo (con recupero del tempo, max 48 ore).
+   ============================================================================ */
+const GAME_VER = 20, BAKKEY = 'tamalucci.backup', LEXKEY = 'tamalucci.lastexport';
+const SV = { sel: 0, pend: null, pick: 0, ptr: 'mouse' };
+const svTwo = n => String(n).padStart(2, '0');
+const svDT = ms => { const d = new Date(ms); return svTwo(d.getDate()) + '/' + svTwo(d.getMonth() + 1) + ' ' + svTwo(d.getHours()) + ':' + svTwo(d.getMinutes()); };
+function svAgeText(born, last) { const s = Math.max(0, (last - born) / 1000), d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d > 0 ? d + 'G ' + h + 'H' : h > 0 ? h + 'H ' + m + 'M' : m + 'M'; }
+function svSum(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, '0'); }
+function svLastExport() { try { return +localStorage.getItem(LEXKEY) || 0; } catch (e) { return 0; } }
+function svBackup() { try { const b = JSON.parse(localStorage.getItem(BAKKEY)); return b && b.s && b.s.stage ? b : null; } catch (e) { return null; } }
+function svDue() { if (S.stage === 'egg' || S.dead) return false; return Date.now() - Math.max(svLastExport(), S.born || 0) > 3 * 86400000; }
+function svSnapshot() { save(); return JSON.parse(JSON.stringify({ s: Object.assign({}, S, { last: Date.now() }), a: ALB })); }
+function svExport() {
+  try {
+    const snap = svSnapshot(), now = new Date(), name = 'tamalucci-' + now.getFullYear() + '-' + svTwo(now.getMonth() + 1) + '-' + svTwo(now.getDate()) + '-' + svTwo(now.getHours()) + svTwo(now.getMinutes()) + '.json';
+    const file = { game: 'TamaLucci', format: 1, version: GAME_VER, key: KEY, exported: now.toISOString(), summary: { stage: snap.s.stage, name: NAMES[snap.s.stage], gen: snap.s.gen || 1, wins: snap.s.wins || 0, age: svAgeText(snap.s.born, snap.s.last) }, sum: svSum(JSON.stringify(snap)), data: snap };
+    const blob = new Blob([JSON.stringify(file, null, 1)], { type: 'application/json' }), a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name; a.style.display = 'none'; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    try { localStorage.setItem(LEXKEY, String(Date.now())); } catch (e) { }
+    toast('SALVATAGGIO ESPORTATO'); sfx('tada'); fxStars(56, 40, 8, 40); return name;
+  } catch (e) { toast('ESPORTAZIONE FALLITA'); sfx('no'); return null; }
+}
+const svInput = (() => { const i = document.createElement('input'); i.type = 'file'; i.id = 'tl-import'; i.accept = '.json,application/json,text/plain'; i.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0'; document.body.appendChild(i); return i; })();
+svInput.addEventListener('change', () => {
+  const f = svInput.files && svInput.files[0]; if (!f) return;
+  if (f.size > 2000000) { toast('FILE TROPPO GRANDE'); sfx('no'); return; }
+  const r = new FileReader(); r.onload = () => svParse(String(r.result)); r.onerror = () => { toast('LETTURA FALLITA'); sfx('no'); }; r.readAsText(f);
+});
+function svOpenImport() {                                                  // il selettore file va aperto DENTRO un gesto dell'utente:
+  if (SV.ptr === 'touch' || SV.ptr === 'pen') SV.pick = nowMs() + 2500;     // touch: al rilascio (pointerup/click); mouse e tastiera: subito
+  else { SV.pick = 0; try { svInput.value = ''; svInput.click(); } catch (e) { } }
+}
+function svFlushPick() { if (SV.pick && nowMs() < SV.pick) { SV.pick = 0; try { svInput.value = ''; svInput.click(); } catch (e) { } } }
+window.addEventListener('pointerup', svFlushPick); window.addEventListener('click', svFlushPick);
+function svFail(m) { toast(m); sfx('no'); fxShake(1.5); }
+function svParse(text) {
+  let f; try { f = JSON.parse(text); } catch (e) { return svFail('FILE NON VALIDO'); }
+  if (!f || f.game !== 'TamaLucci' || !f.data || !f.data.s || typeof f.data.s !== 'object') return svFail('NON E UN SALVATAGGIO');
+  if (typeof f.sum !== 'string' || svSum(JSON.stringify(f.data)) !== f.sum) return svFail('FILE DANNEGGIATO');
+  const st = f.data.s; if (!(st.stage in LVL)) return svFail('DATI NON VALIDI');
+  SV.pend = { s: st, a: (f.data.a && typeof f.data.a === 'object') ? f.data.a : {}, ver: f.version || 0, exported: f.exported };
+  if (mode !== 'save') { mode = 'save'; sel = -1; } sfx('chime');
+}
+function svApply(st, alb, freshLast) {
+  const base = fresh(), s = {};
+  for (const k in base) {
+    const v = st[k], b = base[k];
+    if (v === undefined || v === null) s[k] = b;
+    else if (typeof b === 'number') s[k] = Number.isFinite(v) ? v : b;
+    else if (typeof b === 'boolean') s[k] = !!v;
+    else if (typeof b === 'string') s[k] = typeof v === 'string' ? v : b;
+    else s[k] = (typeof v === 'object') ? v : b;
+  }
+  for (const k in st) if (!(k in s)) s[k] = st[k];
+  if (freshLast) s.last = Date.now();
+  S = s; for (const k in ALB) delete ALB[k]; for (const f of FORM_LIST) if (alb && alb[f]) ALB[f] = 1; try { localStorage.setItem(ALBKEY, JSON.stringify(ALB)); } catch (e) { } unlockForm(S.stage);
+  fxClear(); anim = null; G = null; mode = 'main'; sel = -1; bub = null; DBG.ret = false; PET.x = 56; PET.moving = false; PET.wcGo = false; PET.v = 0; PET.settle = false; PET.pend = 0; PET.jy = 0; PET.jv = 0; SQ.x = 0; SQ.v = 0; PHC.k = -1;
+  bootState(); save();
+}
+function svConfirm() {
+  const p = SV.pend; if (!p) return; SV.pend = null;
+  try { localStorage.setItem(BAKKEY, JSON.stringify({ t: Date.now(), s: Object.assign({}, S, { last: Date.now() }), a: ALB })); } catch (e) { }
+  svApply(p.s, p.a, false); flash = 0.8; sfx('fanfare'); fxConfetti(56, 50, 40, 1.2); toast('SALVATAGGIO CARICATO');
+}
+function svRestore() {
+  const b = svBackup(); if (!b) { toast('NESSUNA COPIA'); sfx('no'); return; }
+  try { localStorage.setItem(BAKKEY, JSON.stringify({ t: Date.now(), s: Object.assign({}, S, { last: Date.now() }), a: ALB })); } catch (e) { }   // scambia: l'attuale diventa la copia
+  svApply(b.s, b.a, true); flash = 0.6; sfx('powerup'); toast('COPIA RIPRISTINATA');
+}
+function svItems() { const bk = svBackup(); return [['ESPORTA SU FILE', svExport], ['IMPORTA DA FILE', svOpenImport], [bk ? 'RIPRISTINA COPIA' : 'NESSUNA COPIA', svRestore], ['ESCI', () => { mode = 'main'; }]]; }
+function svPress(b) {
+  sfx('click');
+  if (SV.pend) { if (b === 'B') svConfirm(); else if (b === 'C') { SV.pend = null; toast('ANNULLATO'); } return; }
+  if (b === 'C') { mode = 'main'; return; }
+  if (b === 'A') { SV.sel = (SV.sel + 1) % 4; return; }
+  svItems()[SV.sel][1]();
+}
+function svTap(x, y) {
+  if (SV.pend) { if (y >= 70 && y < 81) { if (x >= 6 && x < 54) { sfx('click'); svConfirm(); } else if (x >= 58 && x < 106) { sfx('click'); SV.pend = null; toast('ANNULLATO'); } } return; }
+  const i = Math.floor((y - 24) / 10); if (i >= 0 && i < 4) { SV.sel = i; sfx('click'); svItems()[i][1](); }
+}
+function drawSaveMenu(t) {
+  rect(0, BAR, W, H - BAR, '#e9f2f6'); rect(0, BAR, W, 9, '#0f2a57'); rect(0, BAR + 9, W, 1, K); text('ESPORTA / IMPORTA PET', 56, BAR + 2, '#f7c92b', 'c');
+  const p = SV.pend;
+  if (p) {
+    text('IMPORTARE QUESTO?', 56, 25, '#d8383a', 'c');
+    text(NAMES[p.s.stage] + '  GEN ' + (p.s.gen || 1), 56, 34, K, 'c'); text('ETA ' + svAgeText(p.s.born || Date.now(), p.s.last || Date.now()) + '  VITT ' + (p.s.wins || 0), 56, 42, K, 'c');
+    text('SALVATO ' + svDT(p.s.last || Date.now()), 56, 50, '#1f55b0', 'c'); text('IL PET ATTUALE VA IN COPIA', 56, 59, '#66727c', 'c');
+    for (const [x, lab, c] of [[6, 'CARICA', '#2e9e49'], [58, 'ANNULLA', '#b4c0c9']]) { rect(x, 70, 48, 11, K); rect(x + 1, 71, 46, 9, c); text(lab, x + 24, 73, c === '#2e9e49' ? '#ffffff' : K, 'c'); }
+    text('B:CARICA  C:ANNULLA', 56, 84, '#66727c', 'c'); return;
+  }
+  svItems().forEach((it, i) => { const y = 25 + i * 10, on = i === SV.sel, dis = i === 2 && !svBackup(); if (on) { rect(5, y - 1, 102, 9, '#f7c92b'); rect(5, y - 1, 102, 1, K); } text((on ? '>' : ' ') + it[0], 8, y + 1, dis ? '#8d99a3' : K); });
+  const le = svLastExport(), bk = svBackup();
+  text(le ? 'ULTIMO EXPORT ' + svDT(le) : 'MAI ESPORTATO', 56, 67, svDue() ? '#d8383a' : '#66727c', 'c');
+  text(bk ? 'COPIA DEL ' + svDT(bk.t) : 'NESSUNA COPIA', 56, 74, '#66727c', 'c');
+  text('A:SCEGLI B:OK C:ESCI', 56, 84, '#66727c', 'c');
+}
+/* ---------- fila dei tasti sotto lo schermo: SUONO / SALVA / (DEBUG) / NUOVA ---------- */
+const LINK_TXT = { sound: 'SUONO', save: 'ESPORTA PET', debug: 'DEBUG', reset: 'NUOVA' };
+function links() {
+  const ids = ['sound', 'save'].concat(DBG.on ? ['debug'] : [], ['reset']), gap = 3, tot = 134 - (ids.length - 1) * gap, base = ids.map(id => tw(LINK_TXT[id]) + 6), extra = Math.max(0, tot - base.reduce((a, b) => a + b, 0));
+  let x = 3; return ids.map((id, i) => { const w = base[i] + Math.floor(extra / ids.length) + (i < extra % ids.length ? 1 : 0), l = { id, x, y: 246, w, h: 12 }; x += w + gap; return l; });
+}
+
+window.__tama = { svExport, svParse, svConfirm, svRestore, svBackup, svDue, SV, links, svSum, bootState, aniRun, ANIMS, startMed, startScoldAnim, startPetAnim, startRefuse, startWin, VSCN, visRec, REACT, pickScene, startVisit, visitSkip, VD, DOOR, VSC, vpGet, PET, FX, SQ, GH, ALB, DBG, get OX() { return OX; }, get OY() { return OY; }, logoTap, dbgItems, dbgRun, dbgToggle, gameDate, get S() { return S; }, get anim() { return anim; }, get G() { return G; }, get mode() { return mode; }, get SC() { return SC; }, CFG, hitTest, doLink, press, tick1, startHatch, startEvolve, startDeath, startRun, startBed, startWake, startEat, startWC, runPress, endRun, pickNext, applyEvo, speak, poke, scold, activate, newEgg, toiletVisible, wcLogic, ghostPoke, skyPh,
   freeze(v) { freezeAnim = !!v; }, at(tt) { if (anim) { anim.t = tt; runEvents(anim); } }, setMode(m) { mode = m; }, setPage(p) { page = p; }, setSel(i) { sel = i; }, fxConfetti };
 })();
 
